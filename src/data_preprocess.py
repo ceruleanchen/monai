@@ -14,9 +14,16 @@ from typing import Callable, Dict, List, Optional, Sequence, Union
 current_dir = os.path.dirname(os.path.abspath(__file__))
 monai_dir = os.path.dirname(current_dir)
 
+sys.path.append(os.path.join(monai_dir, "config"))
+from config import read_config_yaml, write_config_yaml
+
 sys.path.append(os.path.join(monai_dir, "utils"))
 from utils import os_makedirs, shutil_rmtree
 from logger import get_logger
+
+# Read config_file
+config_file = os.path.join(monai_dir, 'config/config.yaml')
+config = read_config_yaml(config_file)
 
 # Get logger
 # logging level (NOTSET=0 ; DEBUG=10 ; INFO=20 ; WARNING=30 ; ERROR=40 ; CRITICAL=50)
@@ -27,6 +34,9 @@ def data_preprocess(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir):
     label_to_organ_mapping: Dict[str, str] = {'all': 'all', '1': 'liver', '3': 'pancreas', '4': 'spleen', '5': 'kidney'}
     label_to_organ_dir_mapping: Dict[str, str]  = {'all': None, '1': None, '3': None, '4': None, '5': None}
     label_to_mask_bgr_mapping: Dict[str, str]  = {'all': None, '1': None, '3': None, '4': None, '5': None}
+
+    scale_min = float('inf')
+    scale_max = float('-inf')
 
     for data_dir_name in os.listdir(dataset_dir):
         data_dir = os.path.join(dataset_dir, data_dir_name)
@@ -50,6 +60,10 @@ def data_preprocess(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir):
             for dcm_file_path in dcm_file_list:
                 dcm_file_name = os.path.basename(dcm_file_path)
                 ds = pydicom.read_file(dcm_file_path)
+
+                scale_min = min(int(ds.WindowCenter) - int(ds.WindowWidth)//2, scale_min)
+                scale_max = max(int(ds.WindowCenter) + int(ds.WindowWidth)//2, scale_max)
+
                 ds.RescaleIntercept = 0
                 ds.WindowCenter = 3.0
                 ds.WindowWidth = 6.0
@@ -95,6 +109,9 @@ def data_preprocess(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir):
                 for slice_location in sorted(slice_location_to_file_name_mapping.keys()):
                     writer.writerow([slice_location, slice_location_to_file_name_mapping[slice_location]])
 
+    config['scale_min'] = scale_min
+    config['scale_max'] = scale_max
+    write_config_yaml(config_file, config)
 
 if __name__ == '__main__':
     dataset_dir = os.path.join(monai_dir, 'CT_organ_nckuh')

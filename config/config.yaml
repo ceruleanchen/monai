@@ -1,0 +1,14 @@
+organ: liver
+organ_to_mmar:
+  liver:
+    channel: 3
+    name: clara_pt_liver_and_tumor_ct_segmentation_1
+  pancreas:
+    channel: 3
+    name: clara_pt_pancreas_and_tumor_ct_segmentation_1
+  spleen:
+    channel: 2
+    name: clara_pt_spleen_ct_segmentation_1
+train_ratio: 0.8
+scale_min: -135
+scale_max: 215
