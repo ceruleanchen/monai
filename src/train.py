@@ -24,6 +24,7 @@ from monai.data import CacheDataset, DataLoader, Dataset, decollate_batch
 from monai.config import print_config
 from monai.apps import download_and_extract, load_from_mmar
 import torch
+import matplotlib
 import matplotlib.pyplot as plt
 import tempfile
 import shutil
@@ -33,7 +34,8 @@ import glob
 import logging
 import random
 import math
-
+import csv
+import numpy as np
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 monai_dir = os.path.dirname(current_dir)
@@ -194,76 +196,121 @@ def training_process(input_dict):
     optimizer = input_dict['optimizer']
     dice_metric = input_dict['dice_metric']
 
-    max_epochs = 20
+    max_epochs = 6000
     val_interval = 2
     best_metric = -1
     best_metric_epoch = -1
-    epoch_loss_values = []
-    metric_values = []
+    # epoch_loss_values = []
+    # metric_values = []
     post_pred = Compose([EnsureType(), AsDiscrete(argmax=True, to_onehot=channel_num)])
     post_label = Compose([EnsureType(), AsDiscrete(to_onehot=channel_num)])
 
-    for epoch in range(max_epochs):
-        # training
-        logger.info("-" * 10)
-        logger.info(f"epoch {epoch + 1}/{max_epochs}")
-        model.train()
-        epoch_loss = 0
-        step = 0
-        for batch_data in train_loader:
-            step += 1
-            inputs, labels = (
-                batch_data["image"].to(device),
-                batch_data["label"].to(device),
-            )
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = loss_function(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            epoch_loss += loss.item()
-            logger.info(
-                f"{step}/{len(train_ds) // train_loader.batch_size}, "
-                f"train_loss: {loss.item():.4f}")
-        epoch_loss /= step
-        epoch_loss_values.append(epoch_loss)
-        logger.info(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
+    metric_csv_path = os.path.join(mmar_dir, 'metric.csv')
+    with open(metric_csv_path, 'w') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['epoch', 'train_loss', 'val_dice'])
+        metric_list = []
+        for epoch in range(max_epochs):
+            metric_ele_list = []
+            metric_ele_list.append(epoch+1)
+            # training
+            logger.info("-" * 10)
+            logger.info(f"epoch {epoch + 1}/{max_epochs}")
+            model.train()
+            epoch_loss = 0
+            step = 0
+            for batch_data in train_loader:
+                step += 1
+                inputs, labels = (
+                    batch_data["image"].to(device),
+                    batch_data["label"].to(device),
+                )
+                optimizer.zero_grad()
+                outputs = model(inputs)
+                loss = loss_function(outputs, labels)
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
+                logger.info(
+                    f"{step}/{len(train_ds) // train_loader.batch_size}, "
+                    f"train_loss: {loss.item():.4f}")
+            epoch_loss /= step
+            # epoch_loss_values.append(epoch_loss)
+            metric_ele_list.append(epoch_loss)
+            logger.info(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
-        # validation
-        if (epoch + 1) % val_interval == 0:
-            model.eval()
-            with torch.no_grad():
-                for val_data in val_loader:
-                    val_inputs, val_labels = (
-                        val_data["image"].to(device),
-                        val_data["label"].to(device),
-                    )
-                    sw_batch_size = 2
-                    val_outputs = sliding_window_inference(
-                        val_inputs, roi_size, sw_batch_size, model)
-                    val_outputs = [post_pred(i) for i in decollate_batch(val_outputs)]
-                    val_labels = [post_label(i) for i in decollate_batch(val_labels)]
-                    # compute metric for current iteration
-                    dice_metric(y_pred=val_outputs, y=val_labels)
+            # validation
+            if (epoch + 1) % val_interval == 0:
+                model.eval()
+                with torch.no_grad():
+                    for val_data in val_loader:
+                        val_inputs, val_labels = (
+                            val_data["image"].to(device),
+                            val_data["label"].to(device),
+                        )
+                        sw_batch_size = 2
+                        val_outputs = sliding_window_inference(
+                            val_inputs, roi_size, sw_batch_size, model)
+                        val_outputs = [post_pred(i) for i in decollate_batch(val_outputs)]
+                        val_labels = [post_label(i) for i in decollate_batch(val_labels)]
+                        # compute metric for current iteration
+                        dice_metric(y_pred=val_outputs, y=val_labels)
 
-                # aggregate the final mean dice result
-                metric = dice_metric.aggregate().item()
-                # reset the status for next validation round
-                dice_metric.reset()
+                    # aggregate the final mean dice result
+                    metric = dice_metric.aggregate().item()
+                    # reset the status for next validation round
+                    dice_metric.reset()
 
-                metric_values.append(metric)
-                if metric > best_metric:
-                    best_metric = metric
-                    best_metric_epoch = epoch + 1
-                    torch.save(model.state_dict(), os.path.join(
-                        mmar_dir, "best_metric_model.pth"))
-                    logger.info("saved new best metric model")
+                    # metric_values.append(metric)
+                    metric_ele_list.append(metric)
+                    if metric > best_metric:
+                        best_metric = metric
+                        best_metric_epoch = epoch + 1
+                        torch.save(model.state_dict(), os.path.join(
+                            mmar_dir, "best_metric_model.pth"))
+                        logger.info("saved new best metric model")
 
-                logger.info(f"current epoch: {epoch + 1}    current mean dice: {metric:.4f}")
-                logger.info(f"best mean dice: {best_metric:.4f} at epoch: {best_metric_epoch}")
+                    logger.info(f"current epoch: {epoch + 1}    current mean dice: {metric:.4f}")
+                    logger.info(f"best mean dice: {best_metric:.4f} at epoch: {best_metric_epoch}")
+            else:
+                metric_ele_list.append('')
 
-    logger.info(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}")
+            metric_list.append(metric_ele_list)
+            if len(metric_list) >= 10:
+                writer.writerows(metric_list)
+                metric_list = []
 
+        logger.info(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}")
+        if len(metric_list) > 0:
+            writer.writerows(metric_list)
+            metric_list = []
+    return metric_csv_path
+
+def metric_csv_to_png(metric_csv_path):
+    metric_png_path = metric_csv_path.replace("csv", "png")
+    with open(metric_csv_path, 'r') as csvfile:
+        rows = csv.reader(csvfile)
+        rows_array = np.array(list(rows))
+
+        train_loss_epoch = [int(element) for element in rows_array[1:,0]]
+        train_loss = [round(float(element),5) for element in rows_array[1:,1]]
+
+        val_dice = rows_array[1:,2]
+        val_dice_idx = np.where(val_dice!='')
+        val_dice_epoch = [int(element) for element in rows_array[1:,0][val_dice_idx]]
+        val_dice = [round(float(element),5) for element in val_dice[val_dice_idx]]
+
+        matplotlib.use('Agg')
+        plt.figure("train", (12, 6))
+        plt.subplot(1, 2, 1)
+        plt.title("Train Loss")
+        plt.xlabel("epoch")
+        plt.plot(train_loss_epoch, train_loss)
+        plt.subplot(1, 2, 2)
+        plt.title("Validation Dice")
+        plt.xlabel("epoch")
+        plt.plot(val_dice_epoch, val_dice)
+        plt.savefig(metric_png_path)
 
 if __name__ == "__main__":
     # # # # # # # # # # # # # # #
@@ -320,4 +367,10 @@ if __name__ == "__main__":
                     'optimizer': optimizer,
                     'dice_metric': dice_metric
                  }
-    training_process(input_dict)
+    metric_csv_path = training_process(input_dict)
+
+
+    # # # # # # # # # # # # # # # # #
+    #   Convert metric csv to png   #
+    # # # # # # # # # # # # # # # # #
+    metric_csv_to_png(metric_csv_path)
