@@ -29,7 +29,12 @@ config = read_config_yaml(config_file)
 # logging level (NOTSET=0 ; DEBUG=10 ; INFO=20 ; WARNING=30 ; ERROR=40 ; CRITICAL=50)
 logger = get_logger(name=__file__, console_handler_level=logging.INFO, file_handler_level=None)
 
-def data_preprocess(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir):
+def data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir):
+    # makedirs
+    os_makedirs(imagesTr_dir)
+    os_makedirs(labelsTr_dir)
+    os_makedirs(slicesTr_dir)
+
     # 1: liver / 3: pancreas / 4: spleen / 5: kidney
     label_to_organ_mapping: Dict[str, str] = {'all': 'all', '1': 'liver', '3': 'pancreas', '4': 'spleen', '5': 'kidney'}
     label_to_organ_dir_mapping: Dict[str, str]  = {'all': None, '1': None, '3': None, '4': None, '5': None}
@@ -113,14 +118,48 @@ def data_preprocess(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir):
     config['scale_max'] = scale_max
     write_config_yaml(config_file, config)
 
+def data_preprocess_for_inference(data_dir_list, imagesTs_dir, slicesTs_dir):
+    # makedirs
+    os_makedirs(imagesTs_dir, keep_exists=True)
+    os_makedirs(slicesTs_dir, keep_exists=True)
+
+    imagesTs_path_list = []
+    slicesTs_path_list = []
+    scale_min = float('inf')
+    scale_max = float('-inf')
+
+    for data_dir in data_dir_list:
+        # imagesTs
+        data_dir_name = os.path.basename(data_dir)
+        imagesTs_path = os.path.join(imagesTs_dir, '{}.nii.gz'.format(data_dir_name))
+        imagesTs_path_list.append(imagesTs_path)
+        dicom2nifti.dicom_series_to_nifti(data_dir, imagesTs_path, reorient_nifti=True)
+
+        # slicesTs
+        dcm_file_list = sorted(glob.glob('{}/*.dcm'.format(data_dir)))
+        slice_location_to_file_name_mapping = dict()
+        for dcm_file_path in dcm_file_list:
+            dcm_file_name = os.path.basename(dcm_file_path)
+            ds = pydicom.read_file(dcm_file_path)
+
+            scale_min = min(int(ds.WindowCenter) - int(ds.WindowWidth)//2, scale_min)
+            scale_max = max(int(ds.WindowCenter) + int(ds.WindowWidth)//2, scale_max)
+            slice_location_to_file_name_mapping[float(ds.SliceLocation)] = dcm_file_name
+
+        slicesTs_path = os.path.join(slicesTs_dir, '{}.csv'.format(data_dir_name))
+        slicesTs_path_list.append(slicesTs_path)
+        with open(slicesTs_path, 'w') as csvfile:
+            writer = csv.writer(csvfile)
+            for slice_location in sorted(slice_location_to_file_name_mapping.keys()):
+                writer.writerow([slice_location, slice_location_to_file_name_mapping[slice_location]])
+
+    return scale_min, scale_max, imagesTs_path_list, slicesTs_path_list
+
 if __name__ == '__main__':
     dataset_dir = os.path.join(monai_dir, 'CT_organ_nckuh')
 
     imagesTr_dir = os.path.join(monai_dir, 'imagesTr')
     labelsTr_dir = os.path.join(monai_dir, 'labelsTr')
     slicesTr_dir = os.path.join(monai_dir, 'slicesTr')
-    os_makedirs(imagesTr_dir)
-    os_makedirs(labelsTr_dir)
-    os_makedirs(slicesTr_dir)
 
-    data_preprocess(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir)
+    data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir)

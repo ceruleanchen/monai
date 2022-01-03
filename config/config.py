@@ -95,6 +95,7 @@ if __name__ == "__main__":
         }
 
     config_dict['train_ratio'] = 0.8
+    config_dict['roi_size'] = (256, 256, 16)
 
     # Write config_file
     write_config_yaml(config_file, config_dict)

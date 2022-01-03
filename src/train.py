@@ -175,7 +175,7 @@ def setup_model(organ):
     mmar_dir = os.path.join(monai_dir, organ)
     os_makedirs(mmar_dir, keep_exists=True)
 
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     unet_model = load_from_mmar(
         config['organ_to_mmar'][organ]['name'], mmar_dir=mmar_dir,
         map_location=device, pretrained=True)
@@ -319,7 +319,7 @@ if __name__ == "__main__":
     # print_config()
     # 1: liver / 3: pancreas / 4: spleen / 5: kidney
     organ = config['organ']
-    roi_size = (256, 256, 16)
+    roi_size = config['roi_size']
 
 
     # # # # # # # # # # # # #

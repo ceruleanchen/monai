@@ -10,5 +10,9 @@ organ_to_mmar:
     channel: 2
     name: clara_pt_spleen_ct_segmentation_1
 train_ratio: 0.8
+roi_size:
+- 256
+- 256
+- 16
 scale_min: -135
 scale_max: 215
