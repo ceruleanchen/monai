@@ -171,11 +171,11 @@ def setup_val_ds_and_loader(val_files, val_transforms):
     val_loader = DataLoader(val_ds, batch_size=1, num_workers=4)
     return val_ds, val_loader
 
-def setup_model(organ):
+def setup_model(organ, gpu_num=0):
     mmar_dir = os.path.join(monai_dir, organ)
     os_makedirs(mmar_dir, keep_exists=True)
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:{}".format(gpu_num) if torch.cuda.is_available() else "cpu")
     unet_model = load_from_mmar(
         config['organ_to_mmar'][organ]['name'], mmar_dir=mmar_dir,
         map_location=device, pretrained=True)
@@ -344,7 +344,7 @@ if __name__ == "__main__":
     # # # # # # # # # # # # # # # # # # #
     #   Create Model, Loss, Optimizer   #
     # # # # # # # # # # # # # # # # # # #
-    device, mmar_dir, model = setup_model(organ)
+    device, mmar_dir, model = setup_model(organ, gpu_num=0)
     loss_function = DiceLoss(to_onehot_y=True, softmax=True)
     optimizer = torch.optim.Adam(model.parameters(), 1e-4)
     dice_metric = DiceMetric(include_background=False, reduction="mean")
