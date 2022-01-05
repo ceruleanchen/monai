@@ -140,6 +140,41 @@ def contours_to_json(organ, contours, png_file_name, image_shape, json_file_path
         with open(json_file_path, 'w') as json_file:
             json.dump(json_dict, json_file, sort_keys=False, indent=2, separators=(',', ': '))
 
+def run_infer(organ, organ_ele_dict, val_data, roi_size, slicesTs_list, labelsTs_data_dir):
+    post_transforms = organ_ele_dict['post_transforms']
+    device = organ_ele_dict['device']
+    model = organ_ele_dict['model']
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(3,3))
+
+    model.eval()
+    with torch.no_grad():
+        val_inputs = val_data["image"].to(device)
+        sw_batch_size = 4
+        val_data["pred"] = sliding_window_inference(
+            val_inputs, roi_size, sw_batch_size, model
+        )
+        post_val_data = [post_transforms(i) for i in decollate_batch(val_data)]
+        val_outputs = from_engine(["pred"])(post_val_data)
+        output = torch.argmax(val_outputs[0], dim=0).detach().cpu().numpy()
+
+        num_slices = output.shape[2]
+        for idx in range(num_slices):
+            image = output[:,:,idx].astype('uint8')
+
+            if np.any(image>0):
+                slice_location, dcm_file_name = slicesTs_list[idx]
+                png_file_name = dcm_file_name.replace('.dcm', '.png')
+                json_file_name = dcm_file_name.replace('.dcm', '.json')
+                json_file_path = os.path.join(labelsTs_data_dir, json_file_name)
+
+                ret, thresh = cv2.threshold(image, 0, 255, 0)
+                image_bgr = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+                erosion = cv2.erode(image_bgr, kernel, iterations = 2)
+                dilation = cv2.dilate(erosion, kernel, iterations = 2)
+
+                image_gray = cv2.cvtColor(dilation, cv2.COLOR_BGR2GRAY)
+                contours, heirarchy = cv2.findContours(image_gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                contours_to_json(organ, contours, png_file_name, image.shape, json_file_path)
 
 def infer(data_dir_list, organ_list):
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -195,68 +230,29 @@ def infer(data_dir_list, organ_list):
     #   Create Models   #
     # # # # # # # # # # #
     organ_dict = setup_models(organ_dict, gpu_num=1)
-    print(organ_dict)
 
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # #
     #   Check best model output with the input image    #
     # # # # # # # # # # # # # # # # # # # # # # # # # # #
     labelsTs_dir = os.path.join(monai_dir, 'labelsTs')
-    labelsTs_data_dir_list = []
 
-    for slicesTs_path in slicesTs_path_list:
+    for val_data, slicesTs_path in zip(val_loader, slicesTs_path_list):
+        # Create labelsTs_data_dir
         csv_file_name = os.path.basename(slicesTs_path)
         data_dir_name, ext = os.path.splitext(csv_file_name)
         labelsTs_data_dir = os.path.join(labelsTs_dir, data_dir_name)
-        labelsTs_data_dir_list.append(labelsTs_data_dir)
         os_makedirs(labelsTs_data_dir)
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT,(3,3))
+        # Prepare slicesTs_list to rename json file
+        slicesTs_list = []
+        with open(slicesTs_path, 'r') as csvfile:
+            rows = csv.reader(csvfile)
+            for row in rows:
+                slicesTs_list.append(row)
 
-    for organ in organ_dict.keys():
-        post_transforms = organ_dict[organ]['post_transforms']
-        device = organ_dict[organ]['device']
-        model = organ_dict[organ]['model']
-        model.eval()
-
-        with torch.no_grad():
-            for val_data, slicesTs_path, labelsTs_data_dir in zip(val_loader, slicesTs_path_list, labelsTs_data_dir_list):
-                # Prepare slicesTs_list to rename the json file
-                slicesTs_list = []
-                with open(slicesTs_path, 'r') as csvfile:
-                    rows = csv.reader(csvfile)
-                    for row in rows:
-                        slicesTs_list.append(row)
-
-                #
-                val_inputs = val_data["image"].to(device)
-                sw_batch_size = 4
-                val_data["pred"] = sliding_window_inference(
-                    val_inputs, roi_size, sw_batch_size, model
-                )
-                post_val_data = [post_transforms(i) for i in decollate_batch(val_data)]
-                val_outputs = from_engine(["pred"])(post_val_data)
-                output = torch.argmax(val_outputs[0], dim=0).detach().cpu().numpy()
-
-                num_slices = output.shape[2]
-                for idx in range(num_slices):
-                    image = output[:,:,idx].astype('uint8')
-
-                    if np.any(image>0):
-                        slice_location, dcm_file_name = slicesTs_list[idx]
-                        png_file_name = dcm_file_name.replace('.dcm', '.png')
-                        json_file_name = dcm_file_name.replace('.dcm', '.json')
-                        json_file_path = os.path.join(labelsTs_data_dir, json_file_name)
-                        print(idx, slice_location, dcm_file_name, json_file_path)
-
-                        ret, thresh = cv2.threshold(image, 0, 255, 0)
-                        image_bgr = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
-                        erosion = cv2.erode(image_bgr, kernel, iterations = 2)
-                        dilation = cv2.dilate(erosion, kernel, iterations = 2)
-
-                        image_gray = cv2.cvtColor(dilation, cv2.COLOR_BGR2GRAY)
-                        contours, heirarchy = cv2.findContours(image_gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                        contours_to_json(organ, contours, png_file_name, image.shape, json_file_path)
+        for organ in organ_dict.keys():
+            run_infer(organ, organ_dict[organ], val_data, roi_size, slicesTs_list, labelsTs_data_dir)
 
 
 if __name__ == "__main__":
