@@ -42,6 +42,8 @@ from logger import get_logger
 # Read config_file
 config_file = os.path.join(monai_dir, 'config/config.yaml')
 config = read_config_yaml(config_file)
+test_data_dir = config['test_data_dir']
+models_dir = config['models_dir']
 
 # Get logger
 # logging level (NOTSET=0 ; DEBUG=10 ; INFO=20 ; WARNING=30 ; ERROR=40 ; CRITICAL=50)
@@ -176,7 +178,7 @@ def run_infer(organ, organ_ele_dict, val_data, roi_size, slicesTs_list, labelsTs
                 contours, heirarchy = cv2.findContours(image_gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 contours_to_json(organ, contours, png_file_name, image.shape, json_file_path)
 
-def infer(data_dir_list, organ_list):
+def infer(data_dir_list, organ_list, progress_manager_dict=None, update_progress_func=None, return_list=None):
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     #   organ_dict = {                                      #
     #                   'liver': {                          #
@@ -212,8 +214,8 @@ def infer(data_dir_list, organ_list):
     # # # # # # # # # # # # #
     #   Data preprocess     #
     # # # # # # # # # # # # #
-    imagesTs_dir = os.path.join(monai_dir, 'imagesTs')
-    slicesTs_dir = os.path.join(monai_dir, 'slicesTs')
+    imagesTs_dir = os.path.join(test_data_dir, 'imagesTs')
+    slicesTs_dir = os.path.join(test_data_dir, 'slicesTs')
 
     scale_min, scale_max, imagesTs_path_list, slicesTs_path_list = \
         data_preprocess_for_inference(data_dir_list, imagesTs_dir, slicesTs_dir)
@@ -235,13 +237,31 @@ def infer(data_dir_list, organ_list):
     # # # # # # # # # # # # # # # # # # # # # # # # # # #
     #   Check best model output with the input image    #
     # # # # # # # # # # # # # # # # # # # # # # # # # # #
-    labelsTs_dir = os.path.join(monai_dir, 'labelsTs')
+    labelsTs_dir = os.path.join(test_data_dir, 'labelsTs')
+    labelsTs_data_dir_list = []
+    for idx, (val_data, slicesTs_path) in enumerate(zip(val_loader, slicesTs_path_list)):
+        if progress_manager_dict != None and update_progress_func != None:
+            progress_enable = True
+            progress_dict = {}
+        else:
+            progress_enable = False
 
-    for val_data, slicesTs_path in zip(val_loader, slicesTs_path_list):
+        if progress_enable:
+            progress_dict.update(progress_manager_dict)
+            if idx==0:
+                progress_dict["finished"] = 0
+            progress_dict["asset_group"][idx]["status"] = "processing"
+            progress_dict["asset_group"][idx]["message"] = "Inference start"
+            progress_manager_dict.update(progress_dict)
+            update_progress_func(progress_dict)
+
         # Create labelsTs_data_dir
         csv_file_name = os.path.basename(slicesTs_path)
         data_dir_name, ext = os.path.splitext(csv_file_name)
         labelsTs_data_dir = os.path.join(labelsTs_dir, data_dir_name)
+        labelsTs_data_dir_list.append(labelsTs_data_dir)
+        if return_list != None:
+            return_list.append(labelsTs_data_dir)
         os_makedirs(labelsTs_data_dir)
 
         # Prepare slicesTs_list to rename json file
@@ -251,9 +271,20 @@ def infer(data_dir_list, organ_list):
             for row in rows:
                 slicesTs_list.append(row)
 
+        logger.info("Inference on {} starts".format(data_dir_name))
         for organ in organ_dict.keys():
             run_infer(organ, organ_dict[organ], val_data, roi_size, slicesTs_list, labelsTs_data_dir)
 
+        if progress_enable:
+            progress_dict["finished"] = idx + 1
+            progress_dict["asset_group"][idx]["status"] = "processing"
+            progress_dict["asset_group"][idx]["message"] = "Inference done"
+            progress_manager_dict.update(progress_dict)
+            update_progress_func(progress_dict)
+
+        logger.info("Inference on {} is done".format(data_dir_name))
+
+    return labelsTs_data_dir_list
 
 if __name__ == "__main__":
     data_dir_list = ['/home/aoi/opencv_practice/monai/CT_organ_nckuh/004',

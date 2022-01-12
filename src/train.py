@@ -50,6 +50,8 @@ from logger import get_logger
 # Read config_file
 config_file = os.path.join(monai_dir, 'config/config.yaml')
 config = read_config_yaml(config_file)
+train_data_dir = config['train_data_dir']
+models_dir = config['models_dir']
 
 # Get logger
 # logging level (NOTSET=0 ; DEBUG=10 ; INFO=20 ; WARNING=30 ; ERROR=40 ; CRITICAL=50)
@@ -60,9 +62,9 @@ def setup_dataset_path(organ):
     train_ratio = config['train_ratio']
 
     train_images = sorted(
-        glob.glob(os.path.join(monai_dir, "imagesTr", "*.nii.gz")))
+        glob.glob(os.path.join(train_data_dir, "imagesTr", "*.nii.gz")))
     train_labels = sorted(
-        glob.glob(os.path.join(monai_dir, "labelsTr", "*_{}.nii.gz".format(organ))))
+        glob.glob(os.path.join(train_data_dir, "labelsTr", "*_{}.nii.gz".format(organ))))
     data_dicts = [
         {"image": image_name, "label": label_name}
         for image_name, label_name in zip(train_images, train_labels)
@@ -172,7 +174,7 @@ def setup_val_ds_and_loader(val_files, val_transforms):
     return val_ds, val_loader
 
 def setup_model(organ, gpu_num=0):
-    mmar_dir = os.path.join(monai_dir, organ)
+    mmar_dir = os.path.join(models_dir, organ)
     os_makedirs(mmar_dir, keep_exists=True)
 
     device = torch.device("cuda:{}".format(gpu_num) if torch.cuda.is_available() else "cpu")

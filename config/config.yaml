@@ -16,3 +16,6 @@ roi_size:
 - 16
 scale_min: -135
 scale_max: 215
+train_data_dir: /home/aoi/opencv_practice/monai/train_data
+test_data_dir: /home/aoi/opencv_practice/monai/test_data
+models_dir: /home/aoi/opencv_practice/monai/models

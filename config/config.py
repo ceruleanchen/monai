@@ -97,5 +97,9 @@ if __name__ == "__main__":
     config_dict['train_ratio'] = 0.8
     config_dict['roi_size'] = (256, 256, 16)
 
+    config_dict['train_data_dir'] = os.path.join(monai_dir, 'train_data')
+    config_dict['test_data_dir'] = os.path.join(monai_dir, 'test_data')
+    config_dict['models_dir'] = os.path.join(monai_dir, 'models')
+
     # Write config_file
     write_config_yaml(config_file, config_dict)
