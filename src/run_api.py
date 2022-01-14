@@ -92,7 +92,7 @@ class MonaiApp(object):
         self.progress_s3_path = None
 
         self.app = Sanic(__name__)
-        self.app.add_route(self.start_inference, "/infer", methods=['POST'])
+        self.app.add_route(self.start_inference, "/predict", methods=['POST'])
         self.app.add_route(self.stop_inference, "/stop", methods=['POST'])
         self.app.add_route(self.get_label, "/label", methods=['POST', 'GET'])
 
@@ -244,7 +244,7 @@ class MonaiApp(object):
         logger.info("All done")
         self.event_obj.set()
 
-    # @app.route("/infer", methods=['POST'])
+    # @app.route("/predict", methods=['POST'])
     async def start_inference(self, request):
         organ_list = list(config['organ_to_mmar'].keys())
         empty_response = {"message": ""}
@@ -314,4 +314,5 @@ class MonaiApp(object):
 
 if __name__ == "__main__":
     app = MonaiApp()
-    app.run(host = '0.0.0.0', port = 1234)
+    port = int(os.environ.get('cloud_inference_port', 1234))
+    app.run(host = '0.0.0.0', port = port)
