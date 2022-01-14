@@ -231,7 +231,7 @@ def infer(data_dir_list, organ_list, progress_manager_dict=None, update_progress
     # # # # # # # # # # #
     #   Create Models   #
     # # # # # # # # # # #
-    organ_dict = setup_models(organ_dict, gpu_num=1)
+    organ_dict = setup_models(organ_dict, gpu_num=0)
 
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # #
