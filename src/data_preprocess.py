@@ -35,10 +35,16 @@ def data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slices
     os_makedirs(labelsTr_dir)
     os_makedirs(slicesTr_dir)
 
+    organ_list = ['all']
+    organ_list.extend(list(config['organ_to_mmar'].keys())) # organ_list = ['all', 'liver', 'pancreas', 'spleen']
+    organ_dict = dict.fromkeys(organ_list)
+    for organ in organ_dict:
+        organ_dict[organ] = {}
+
+    # Assume only the 001 ~ 005 data have this kind of label
     # 1: liver / 3: pancreas / 4: spleen / 5: kidney
-    label_to_organ_mapping: Dict[str, str] = {'all': 'all', '1': 'liver', '3': 'pancreas', '4': 'spleen', '5': 'kidney'}
-    label_to_organ_dir_mapping: Dict[str, str]  = {'all': None, '1': None, '3': None, '4': None, '5': None}
-    label_to_mask_bgr_mapping: Dict[str, str]  = {'all': None, '1': None, '3': None, '4': None, '5': None}
+    # obsolete_label_to_organ_mapping = {'1': 'liver', '3': 'pancreas', '4': 'spleen', '5': 'kidney', 'd': 'kidney'}
+    obsolete_label_to_organ_mapping = {'1': 'liver', '3': 'pancreas', '4': 'spleen'}
 
     scale_min = float('inf')
     scale_max = float('-inf')
@@ -52,10 +58,10 @@ def data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slices
             dicom2nifti.dicom_series_to_nifti(data_dir, imagesTr_path, reorient_nifti=True)
 
             # labelsTr
-            for label, organ in label_to_organ_mapping.items():
+            for organ in organ_list:
                 labelsTr_organ_dir = os.path.join(labelsTr_dir, '{}_{}'.format(data_dir_name, organ))
                 os_makedirs(labelsTr_organ_dir)
-                label_to_organ_dir_mapping[label] = labelsTr_organ_dir
+                organ_dict[organ]['label_dir'] = labelsTr_organ_dir
 
             dcm_file_list = sorted(glob.glob('{}/*.dcm'.format(data_dir)))
             json_file_list = sorted(glob.glob('{}/*.json'.format(data_dir)))
@@ -74,11 +80,12 @@ def data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slices
                 ds.WindowWidth = 6.0
                 slice_location_to_file_name_mapping[float(ds.SliceLocation)] = dcm_file_name
                 logger.debug("{:>20s}, {:>3s}, {:>10s}".format(dcm_file_name, str(ds.InstanceNumber), str(ds.SliceLocation)))
-                img = ds.pixel_array
 
+                # Convert polygon to mask
+                img = ds.pixel_array
                 mask_bgr = np.zeros([*img.shape, 3], dtype='uint8')
-                for label in label_to_organ_mapping.keys():
-                    label_to_mask_bgr_mapping[label] = np.copy(mask_bgr)
+                for organ in organ_list:
+                    organ_dict[organ]['mask_bgr'] = np.copy(mask_bgr)
                 json_file_path = dcm_file_path.replace('.dcm', '.json')
 
                 if json_file_path in json_file_list:
@@ -87,25 +94,28 @@ def data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slices
 
                     for shape in js['shapes']:
                         label = shape['label']
-                        if label == '2':
+                        organ = obsolete_label_to_organ_mapping.get(label, label)
+
+                        if organ not in organ_list:
+                            logger.warning("label = {} does not support. Support only {}".format(organ, organ_list[1:]))
                             continue
-                        elif label == 'd':
-                            label = '5'
-                        val = 1 # int(label)
+
                         contour = np.expand_dims(np.array(shape['points']), axis=1)
                         contour = contour.astype('int32')
-                        cv2.drawContours(label_to_mask_bgr_mapping[label], [contour], -1, (val,val,val),-1)
-                        cv2.drawContours(label_to_mask_bgr_mapping['all'], [contour], -1, (int(label),int(label),int(label)),-1)
+                        val = 1
+                        cv2.drawContours(organ_dict[organ]['mask_bgr'], [contour], -1, (val,val,val),-1)
+                        val = organ_list.index(organ)
+                        cv2.drawContours(organ_dict['all']['mask_bgr'], [contour], -1, (val,val,val),-1)
 
-                for label in label_to_organ_mapping.keys():
-                    mask_gray = cv2.cvtColor(label_to_mask_bgr_mapping[label], cv2.COLOR_BGR2GRAY)
+                for organ in organ_list:
+                    mask_gray = cv2.cvtColor(organ_dict[organ]['mask_bgr'], cv2.COLOR_BGR2GRAY)
                     mask_gray = mask_gray.astype('int16') # should be numpy.float64?
                     ds.PixelData = mask_gray
-                    ds.save_as(os.path.join(label_to_organ_dir_mapping[label], dcm_file_name))
+                    ds.save_as(os.path.join(organ_dict[organ]['label_dir'], dcm_file_name))
 
-            for label in label_to_organ_mapping.keys():
-                labelsTr_path = label_to_organ_dir_mapping[label] + '.nii.gz'
-                dicom2nifti.dicom_series_to_nifti(label_to_organ_dir_mapping[label], labelsTr_path, reorient_nifti=True)
+            for organ in organ_list:
+                labelsTr_path = organ_dict[organ]['label_dir'] + '.nii.gz'
+                dicom2nifti.dicom_series_to_nifti(organ_dict[organ]['label_dir'], labelsTr_path, reorient_nifti=True)
 
             # slicesTr
             slicesTr_path = os.path.join(slicesTr_dir, '{}.csv'.format(data_dir_name))
@@ -158,8 +168,8 @@ def data_preprocess_for_inference(data_dir_list, imagesTs_dir, slicesTs_dir):
 if __name__ == '__main__':
     dataset_dir = os.path.join(monai_dir, 'CT_organ_nckuh')
 
-    imagesTr_dir = os.path.join(monai_dir, 'imagesTr')
-    labelsTr_dir = os.path.join(monai_dir, 'labelsTr')
-    slicesTr_dir = os.path.join(monai_dir, 'slicesTr')
+    imagesTr_dir = os.path.join(config['train_data_dir'], 'imagesTr')
+    labelsTr_dir = os.path.join(config['train_data_dir'], 'labelsTr')
+    slicesTr_dir = os.path.join(config['train_data_dir'], 'slicesTr')
 
     data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir)
