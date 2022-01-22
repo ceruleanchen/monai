@@ -44,7 +44,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 monai_dir = os.path.dirname(current_dir)
 
 sys.path.append(os.path.join(monai_dir, "config"))
-from config import read_config_yaml, write_config_yaml
+from config import read_config_yaml, write_config_yaml, write_config_yaml_with_key_value
 
 sys.path.append(os.path.join(monai_dir, "utils"))
 from utils import os_makedirs, shutil_rmtree
@@ -442,6 +442,8 @@ if __name__ == "__main__":
     for organ in list(organ_list):
         if organ not in supported_organ_list:
             organ_list.remove(organ)
+    config['organ_list'] = organ_list
+    write_config_yaml_with_key_value(config_file, 'organ_list', organ_list)
     logger.info("Effective organ_list is {}. (Support only {})".format(organ_list, supported_organ_list))
 
 

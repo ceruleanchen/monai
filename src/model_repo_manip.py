@@ -3,6 +3,7 @@ import os, sys
 import logging
 import zipfile
 from afs import models
+import argparse
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 monai_dir = os.path.dirname(current_dir)
@@ -11,7 +12,7 @@ sys.path.append(os.path.join(monai_dir, "config"))
 from config import read_config_yaml, write_config_yaml_with_key_value
 
 sys.path.append(os.path.join(monai_dir, "utils"))
-from utils import os_makedirs, shutil_rmtree
+from utils import os_makedirs, shutil_rmtree, shutil_copytree
 from logger import get_logger
 
 # Read config_file
@@ -23,9 +24,6 @@ config = read_config_yaml(config_file)
 logger = get_logger(name=__file__, console_handler_level=logging.DEBUG, file_handler_level=None)
 
 default_repo_name = 'monai_retrain.zip'
-
-# def upload_to_model_repo(repo_name='pcb_retrain'):
-
 
 def take_floating_ymd(elem):
     days_list = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -77,5 +75,67 @@ def download_from_model_repo(repo_name=default_repo_name):
             zf.extractall(old_model_dir)
         write_config_yaml_with_key_value(config_file, 'old_model_dir', old_model_dir)
 
+def upload_to_model_repo(repo_name=default_repo_name):
+    # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    #       Copy best models to models/new folder       #
+    # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    models_dir = config['models_dir']
+    new_model_dir = os.path.join(models_dir, 'new')
+    os_makedirs(new_model_dir)
+
+    tags = {}
+    for organ in config['organ_list']:
+        old_model_dice = config['organ_to_mmar'][organ]['old_model_dice']
+        new_model_dice = config['organ_to_mmar'][organ]['new_model_dice']
+        if new_model_dice >= old_model_dice:
+            src_dir = config['organ_to_mmar'][organ]['new_model_dir']
+            dst_dir = os.path.join(new_model_dir, organ)
+            shutil_copytree(src_dir, dst_dir)
+            tags['old/new ({})'.format(organ)] = '{}/{}'.format(old_model_dice, new_model_dice)
+        else:
+            old_model_file_path = config['organ_to_mmar'][organ]['old_model_file_path']
+            if old_model_file_path!=None:
+                src_dir = config['organ_to_mmar'][organ]['old_model_dir']
+                dst_dir = os.path.join(new_model_dir, organ)
+                shutil_copytree(src_dir, dst_dir)
+            tags['old/new ({})'.format(organ)] = '{}/{}'.format(old_model_dice, old_model_dice)
+
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    #       Zip best models and corresponding matrices      #
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    zip_file_path = new_model_dir + '.zip'
+    zf = zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED)
+    logger.info("Zip {} from {}".format(zip_file_path, new_model_dir))
+    for root, dirs, files in os.walk(new_model_dir):
+        for file_name in files:
+            src_file_path = os.path.join(root, file_name)
+            dst_file_path = src_file_path.replace(new_model_dir + '/', '')
+            zf.write(src_file_path, dst_file_path)
+    zf.close()
+
+
+    # # # # # # # # # # # # # # # # # # # # # # #
+    #       Upload to aifs model repository     #
+    # # # # # # # # # # # # # # # # # # # # # # #
+    if config['production'] == 'retrain_aifs':
+        logger.info("Upload to model repository {}".format(default_repo_name))
+        afs_models = models()
+
+        afs_models.upload_model(
+            model_path=zip_file_path,
+            model_repository_name=default_repo_name,
+            tags=tags
+        )
+
 if __name__ == "__main__":
-    download_from_model_repo()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--download", action="store_true")
+    parser.add_argument("--upload", action="store_true")
+    args = parser.parse_args()
+
+    if args.download:
+        download_from_model_repo()
+
+    if args.upload:
+        upload_to_model_repo()

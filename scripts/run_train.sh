@@ -86,7 +86,7 @@ Fun_EvalCmd "${lCmdList[*]}"
 # # # # # # # # # # # # # # # # # # # # #
 lCmdList=(
             "cd $MONAI_DIR/src" \
-            "python model_repo_manip.py"
+            "python model_repo_manip.py --download"
          )
 Fun_EvalCmd "${lCmdList[*]}"
 
@@ -117,5 +117,15 @@ Fun_EvalCmd "${lCmdList[*]}"
 lCmdList=(
             "cd $MONAI_DIR/src" \
             "python train.py"
+         )
+Fun_EvalCmd "${lCmdList[*]}"
+
+
+# # # # # # # # # # # # # # # # # # # #
+#     Upload model by Model SDK       #
+# # # # # # # # # # # # # # # # # # # #
+lCmdList=(
+            "cd $MONAI_DIR/src" \
+            "python model_repo_manip.py --upload"
          )
 Fun_EvalCmd "${lCmdList[*]}"

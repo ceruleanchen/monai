@@ -100,12 +100,10 @@ if __name__ == "__main__":
         config_dict['val_data_dir'] = os.path.join(monai_dir, 'val_data')
         config_dict['test_data_dir'] = os.path.join(monai_dir, 'test_data')
         config_dict['models_dir'] = os.path.join(monai_dir, 'models')
-        # config_dict['old_model_dir'] = os.path.join(monai_dir, 'models/old') # model_repo_manip.py updated this
+        config_dict['old_model_dir'] = None # model_repo_manip.py updated this: os.path.join(monai_dir, 'models/old')
+        config_dict['organ_list'] = None # train.py updated this: ['liver', 'pancreas', 'spleen']
+        config_dict['roi_size'] = (256, 256, 16)
 
-
-
-        # 1: liver / 3: pancreas / 4: spleen / 5: kidney
-        config_dict['organ'] = 'liver' # liver / pancreas / spleen
 
         # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_liver_and_tumor_ct_segmentation
         # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_pancreas_and_tumor_ct_segmentation
@@ -153,9 +151,6 @@ if __name__ == "__main__":
                 old_model_file_path_list = glob.glob(os.path.join(old_model_dir, "*.pth"))
                 if len(old_model_file_path_list) > 0:
                     config_dict['organ_to_mmar'][organ]['old_model_file_path'] = old_model_file_path_list[0]
-
-        config_dict['roi_size'] = (256, 256, 16)
-
 
 
     # Write config_file
