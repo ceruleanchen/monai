@@ -5,7 +5,8 @@ import logging
 import json
 from multiprocessing import Process, Manager
 import threading
-
+import zipfile
+import glob
 from sanic import Sanic
 from sanic import response
 
@@ -16,6 +17,7 @@ from botocore.exceptions import ClientError, EndpointConnectionError
 
 from inference import infer
 # from point_reduction import get_contour_point_num, binary_search_coeff, merge_list, insert_list, sample_from_xy_list
+from afs import models
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 monai_dir = os.path.dirname(current_dir)
@@ -94,6 +96,7 @@ class MonaiApp(object):
         self.app = Sanic(__name__)
         self.app.add_route(self.start_inference, "/predict", methods=['POST'])
         self.app.add_route(self.stop_inference, "/stop", methods=['POST'])
+        self.app.add_route(self.download_model, "/model", methods=['POST'])
         self.app.add_route(self.get_label, "/label", methods=['POST', 'GET'])
 
     def run(self, host, port):
@@ -311,6 +314,35 @@ class MonaiApp(object):
             self.monai_func_thread.join()
         self.stop_proc = False
         return response.json({"message": "Success: inference is interrupted"})
+
+    # @app.route("/model", methods=['POST'])
+    async def download_model(self, request):
+        models_dir = config['models_dir']
+        request_dict = request.json
+        logger.info("Download model request: {}".format(request_dict))
+
+        save_dir = request_dict['save_model_to']
+        model_repository_name = request_dict['name']
+        model_name = request_dict['version']
+        update_model_zip_path = os.path.join(models_dir, model_repository_name)
+
+        afs_models = models()
+        afs_models.download_model(save_path=update_model_zip_path, model_repository_name=model_repository_name, model_name=model_name)
+
+        if os.path.isfile(update_model_zip_path):
+            update_model_dir = os.path.join(models_dir, 'inference')
+            os_makedirs(update_model_dir)
+            with zipfile.ZipFile(update_model_zip_path) as zf:
+                zf.extractall(update_model_dir)
+
+            for organ in config['organ_to_mmar']:
+                new_model_dir = config['organ_to_mmar'][organ]['new_model_dir']
+                if new_model_dir != None:
+                    new_model_file_path_list = glob.glob(os.path.join(new_model_dir, "*.pth"))
+                    if len(new_model_file_path_list) > 0:
+                        config['organ_to_mmar'][organ]['new_model_file_path'] = new_model_file_path_list[0]
+            write_config_yaml(config_file, config)
+        return response.json({'status': 'success'})
 
     # @app.route("/label", methods=['POST', 'GET'])
     async def get_label(self, request):
