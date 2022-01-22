@@ -3,6 +3,10 @@ import os, sys
 import yaml
 from collections import OrderedDict
 from filelock import FileLock
+import argparse
+import zipfile
+import time
+import glob
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 monai_dir = os.path.dirname(current_dir)
@@ -77,29 +81,82 @@ def print_config_yaml(config_file):
     print(dict(config_dict))
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--set_production", action="store_true")
+    args = parser.parse_args()
+
     # Read config_file
     config_file = os.path.join(current_dir, 'config.yaml')
     config_dict = read_config_yaml(config_file)
 
-    # 1: liver / 3: pancreas / 4: spleen / 5: kidney
-    config_dict['organ'] = 'liver' # liver / pancreas / spleen
+    config_dict['production'] = 'retrain' # train / retrain / retrain_aifs / inference
+    if args.set_production:
+        subdict = {key:config_dict[key] for key in ['production'] if key in config_dict}
+        print(dict(subdict))
+    else:
+        today_date = time.strftime("%Y_%m_%d")
 
-    # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_liver_and_tumor_ct_segmentation
-    # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_pancreas_and_tumor_ct_segmentation
-    # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_spleen_ct_segmentation
-    config_dict['organ_to_mmar'] = \
-        {
-            'liver'   : {'name': 'clara_pt_liver_and_tumor_ct_segmentation_1', 'channel': 3},
-            'pancreas': {'name': 'clara_pt_pancreas_and_tumor_ct_segmentation_1', 'channel': 3},
-            'spleen'  : {'name': 'clara_pt_spleen_ct_segmentation_1', 'channel': 2}
-        }
+        config_dict['train_data_dir'] = os.path.join(monai_dir, 'train_data')
+        config_dict['val_data_dir'] = os.path.join(monai_dir, 'val_data')
+        config_dict['test_data_dir'] = os.path.join(monai_dir, 'test_data')
+        config_dict['models_dir'] = os.path.join(monai_dir, 'models')
+        # config_dict['old_model_dir'] = os.path.join(monai_dir, 'models/old') # model_repo_manip.py updated this
 
-    config_dict['train_ratio'] = 0.8
-    config_dict['roi_size'] = (256, 256, 16)
 
-    config_dict['train_data_dir'] = os.path.join(monai_dir, 'train_data')
-    config_dict['test_data_dir'] = os.path.join(monai_dir, 'test_data')
-    config_dict['models_dir'] = os.path.join(monai_dir, 'models')
+
+        # 1: liver / 3: pancreas / 4: spleen / 5: kidney
+        config_dict['organ'] = 'liver' # liver / pancreas / spleen
+
+        # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_liver_and_tumor_ct_segmentation
+        # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_pancreas_and_tumor_ct_segmentation
+        # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_spleen_ct_segmentation
+        config_dict['organ_to_mmar'] = \
+            {
+                'liver'   : OrderedDict({
+                            'name': 'clara_pt_liver_and_tumor_ct_segmentation_1',
+                            'channel': 3,
+                            'mmar_dir': os.path.join(monai_dir, 'models/mmar/liver'),
+                            'old_model_dir': os.path.join(config_dict['old_model_dir'], 'liver') if config_dict['old_model_dir'] else None,
+                            'old_model_file_path': None,
+                            'old_model_dice': None,
+                            'new_model_dir': os.path.join(monai_dir, 'models/{}/liver'.format(today_date)),
+                            'new_model_file_path': None,
+                            'new_model_dice': None
+                            }),
+                'pancreas': OrderedDict({
+                            'name': 'clara_pt_pancreas_and_tumor_ct_segmentation_1',
+                            'channel': 3,
+                            'mmar_dir': os.path.join(monai_dir, 'models/mmar/pancreas'),
+                            'old_model_dir': os.path.join(config_dict['old_model_dir'], 'pancreas') if config_dict['old_model_dir'] else None,
+                            'old_model_file_path': None,
+                            'old_model_dice': None,
+                            'new_model_dir': os.path.join(monai_dir, 'models/{}/pancreas'.format(today_date)),
+                            'new_model_file_path': None,
+                            'new_model_dice': None
+                            }),
+                'spleen'  : OrderedDict({
+                            'name': 'clara_pt_spleen_ct_segmentation_1',
+                            'channel': 2,
+                            'mmar_dir': os.path.join(monai_dir, 'models/mmar/spleen'),
+                            'old_model_dir': os.path.join(config_dict['old_model_dir'], 'spleen') if config_dict['old_model_dir'] else None,
+                            'old_model_file_path': None,
+                            'old_model_dice': None,
+                            'new_model_dir': os.path.join(monai_dir, 'models/{}/spleen'.format(today_date)),
+                            'new_model_file_path': None,
+                            'new_model_dice': None
+                            })
+            }
+
+        for organ in config_dict['organ_to_mmar']:
+            old_model_dir = config_dict['organ_to_mmar'][organ]['old_model_dir']
+            if old_model_dir != None:
+                old_model_file_path_list = glob.glob(os.path.join(old_model_dir, "*.pth"))
+                if len(old_model_file_path_list) > 0:
+                    config_dict['organ_to_mmar'][organ]['old_model_file_path'] = old_model_file_path_list[0]
+
+        config_dict['roi_size'] = (256, 256, 16)
+
+
 
     # Write config_file
     write_config_yaml(config_file, config_dict)

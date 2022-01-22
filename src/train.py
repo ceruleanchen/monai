@@ -30,12 +30,15 @@ import tempfile
 import shutil
 import os
 import sys
+import json
 import glob
 import logging
 import random
 import math
 import csv
 import numpy as np
+import argparse
+from multiprocessing import Process, Lock
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 monai_dir = os.path.dirname(current_dir)
@@ -50,17 +53,14 @@ from logger import get_logger
 # Read config_file
 config_file = os.path.join(monai_dir, 'config/config.yaml')
 config = read_config_yaml(config_file)
-train_data_dir = config['train_data_dir']
 models_dir = config['models_dir']
 
 # Get logger
 # logging level (NOTSET=0 ; DEBUG=10 ; INFO=20 ; WARNING=30 ; ERROR=40 ; CRITICAL=50)
-logger = get_logger(name=__file__, console_handler_level=logging.DEBUG, file_handler_level=None)
+logger = get_logger(name=__file__, console_handler_level=logging.INFO, file_handler_level=None)
 
 
-def setup_dataset_path(organ):
-    train_ratio = config['train_ratio']
-
+def setup_dataset_path(organ, train_data_dir):
     train_images = sorted(
         glob.glob(os.path.join(train_data_dir, "imagesTr", "*.nii.gz")))
     train_labels = sorted(
@@ -69,31 +69,7 @@ def setup_dataset_path(organ):
         {"image": image_name, "label": label_name}
         for image_name, label_name in zip(train_images, train_labels)
     ]
-
-    total_num = len(data_dicts) 
-    train_num = math.ceil(total_num * train_ratio)
-
-    random_idx = list(range(total_num))
-    random.shuffle(random_idx)
-    train_idx = random_idx[:train_num]
-    val_idx = random_idx[train_num-1:]
-
-    train_files = [data_dicts[idx] for idx in train_idx]
-    val_files = [data_dicts[idx] for idx in val_idx]
-
-    logger.debug("train_files : ")
-    for train_file in train_files:
-        logger.debug("{}".format(train_file["image"]))
-        logger.debug("{}".format(train_file["label"]))
-        logger.debug("")
-
-    logger.debug("val_files : ")
-    for val_file in val_files:
-        logger.debug("{}".format(val_file["image"]))
-        logger.debug("{}".format(val_file["label"]))
-        logger.debug("")
-
-    return train_files, val_files
+    return data_dicts
 
 def setup_transforms(roi_size):
     scale_min = config['scale_min']
@@ -174,7 +150,7 @@ def setup_val_ds_and_loader(val_files, val_transforms):
     return val_ds, val_loader
 
 def setup_model(organ, gpu_num=0):
-    mmar_dir = os.path.join(models_dir, organ)
+    mmar_dir = config['organ_to_mmar'][organ]['mmar_dir']
     os_makedirs(mmar_dir, keep_exists=True)
 
     device = torch.device("cuda:{}".format(gpu_num) if torch.cuda.is_available() else "cpu")
@@ -182,9 +158,48 @@ def setup_model(organ, gpu_num=0):
         config['organ_to_mmar'][organ]['name'], mmar_dir=mmar_dir,
         map_location=device, pretrained=True)
     model = unet_model.to(device)
-    return device, mmar_dir, model
+    return device, model
 
-def training_process(input_dict):
+def validation_process(lock, input_dict):
+    organ = input_dict['organ']
+    channel_num = input_dict['channel_num']
+    roi_size = input_dict['roi_size']
+    val_loader = input_dict['val_loader']
+    device = input_dict['device']
+    model = input_dict['model']
+    dice_metric = input_dict['dice_metric']
+
+    post_pred = Compose([EnsureType(), AsDiscrete(argmax=True, to_onehot=channel_num)])
+    post_label = Compose([EnsureType(), AsDiscrete(to_onehot=channel_num)])
+    model.eval()
+    with torch.no_grad():
+        for val_data in val_loader:
+            val_inputs, val_labels = (
+                val_data["image"].to(device),
+                val_data["label"].to(device),
+            )
+            sw_batch_size = 2
+            val_outputs = sliding_window_inference(
+                val_inputs, roi_size, sw_batch_size, model)
+            val_outputs = [post_pred(i) for i in decollate_batch(val_outputs)]
+            val_labels = [post_label(i) for i in decollate_batch(val_labels)]
+            # compute metric for current iteration
+            dice_metric(y_pred=val_outputs, y=val_labels)
+
+        # aggregate the final mean dice result
+        metric = dice_metric.aggregate().item()
+        # reset the status for next validation round
+        dice_metric.reset()
+
+    round_metric = round(metric, 4)
+
+    lock.acquire()
+    config = read_config_yaml(config_file)
+    config['organ_to_mmar'][organ]['old_model_dice'] = round_metric
+    write_config_yaml(config_file, config)
+    lock.release()
+
+def training_process(lock, input_dict):
     organ = input_dict['organ']
     channel_num = input_dict['channel_num']
     roi_size = input_dict['roi_size']
@@ -192,13 +207,18 @@ def training_process(input_dict):
     train_loader = input_dict['train_loader']
     val_loader = input_dict['val_loader']
     device = input_dict['device']
-    mmar_dir = input_dict['mmar_dir']
     model = input_dict['model']
     loss_function = input_dict['loss_function']
     optimizer = input_dict['optimizer']
     dice_metric = input_dict['dice_metric']
+    new_model_dir = input_dict['new_model_dir']
+    max_epochs = input_dict['max_epochs']
 
-    max_epochs = 6000
+    os_makedirs(new_model_dir)
+    date = os.path.basename(os.path.dirname(new_model_dir))
+    new_model_file_name = "{}_{}.pth".format(organ, date)
+    new_model_file_path = os.path.join(new_model_dir, new_model_file_name)
+
     val_interval = 2
     best_metric = -1
     best_metric_epoch = -1
@@ -207,7 +227,7 @@ def training_process(input_dict):
     post_pred = Compose([EnsureType(), AsDiscrete(argmax=True, to_onehot=channel_num)])
     post_label = Compose([EnsureType(), AsDiscrete(to_onehot=channel_num)])
 
-    metric_csv_path = os.path.join(mmar_dir, 'metric.csv')
+    metric_csv_path = os.path.join(new_model_dir, 'metric.csv')
     with open(metric_csv_path, 'w') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(['epoch', 'train_loss', 'val_dice'])
@@ -234,11 +254,12 @@ def training_process(input_dict):
                 optimizer.step()
                 epoch_loss += loss.item()
                 logger.info(
-                    f"{step}/{len(train_ds) // train_loader.batch_size}, "
+                    f"{step}/{math.ceil(len(train_ds) / train_loader.batch_size)}, "
                     f"train_loss: {loss.item():.4f}")
             epoch_loss /= step
             # epoch_loss_values.append(epoch_loss)
-            metric_ele_list.append(epoch_loss)
+            round_epoch_loss = round(epoch_loss, 4)
+            metric_ele_list.append(round_epoch_loss)
             logger.info(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
             # validation
@@ -264,12 +285,19 @@ def training_process(input_dict):
                     dice_metric.reset()
 
                     # metric_values.append(metric)
-                    metric_ele_list.append(metric)
+                    round_metric = round(metric, 4)
+                    metric_ele_list.append(round_metric)
                     if metric > best_metric:
                         best_metric = metric
                         best_metric_epoch = epoch + 1
-                        torch.save(model.state_dict(), os.path.join(
-                            mmar_dir, "best_metric_model.pth"))
+                        torch.save(model.state_dict(), new_model_file_path)
+
+                        lock.acquire()
+                        config = read_config_yaml(config_file)
+                        config['organ_to_mmar'][organ]['new_model_file_path'] = new_model_file_path
+                        config['organ_to_mmar'][organ]['new_model_dice'] = round_metric
+                        write_config_yaml(config_file, config)
+                        lock.release()
                         logger.info("saved new best metric model")
 
                     logger.info(f"current epoch: {epoch + 1}    current mean dice: {metric:.4f}")
@@ -314,20 +342,22 @@ def metric_csv_to_png(metric_csv_path):
         plt.plot(val_dice_epoch, val_dice)
         plt.savefig(metric_png_path)
 
-if __name__ == "__main__":
+def training(lock, organ, gpu_num=0):
     # # # # # # # # # # # # # # #
     #   Global configuration    #
     # # # # # # # # # # # # # # #
     # print_config()
     # 1: liver / 3: pancreas / 4: spleen / 5: kidney
-    organ = config['organ']
+    train_data_dir = config['train_data_dir']
+    val_data_dir = config['val_data_dir']
+    old_model_file_path = config['organ_to_mmar'][organ]['old_model_file_path']
     roi_size = config['roi_size']
-
 
     # # # # # # # # # # # # #
     #   Setup dataset path  #
     # # # # # # # # # # # # #
-    train_files, val_files = setup_dataset_path(organ)
+    train_files = setup_dataset_path(organ, train_data_dir)
+    val_files = setup_dataset_path(organ, val_data_dir)
 
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -346,10 +376,29 @@ if __name__ == "__main__":
     # # # # # # # # # # # # # # # # # # #
     #   Create Model, Loss, Optimizer   #
     # # # # # # # # # # # # # # # # # # #
-    device, mmar_dir, model = setup_model(organ, gpu_num=0)
+    device, model = setup_model(organ, gpu_num=gpu_num)
+    if old_model_file_path != None and os.path.isfile(old_model_file_path):
+        logger.info("Load model from {}".format(old_model_file_path))
+        model.load_state_dict(torch.load(old_model_file_path))
+
     loss_function = DiceLoss(to_onehot_y=True, softmax=True)
     optimizer = torch.optim.Adam(model.parameters(), 1e-4)
     dice_metric = DiceMetric(include_background=False, reduction="mean")
+
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    #   Execute a typical PyTorch validation process    #
+    # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    input_dict = {
+                    'organ': organ,
+                    'channel_num': config['organ_to_mmar'][organ]['channel'],
+                    'roi_size': roi_size,
+                    'val_loader': val_loader,
+                    'device': device,
+                    'model': model,
+                    'dice_metric': dice_metric
+                 }
+    validation_process(lock, input_dict)
 
 
     # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -363,16 +412,58 @@ if __name__ == "__main__":
                     'train_loader': train_loader,
                     'val_loader': val_loader,
                     'device': device,
-                    'mmar_dir': mmar_dir,
                     'model': model,
                     'loss_function': loss_function,
                     'optimizer': optimizer,
-                    'dice_metric': dice_metric
+                    'dice_metric': dice_metric,
+                    'new_model_dir': config['organ_to_mmar'][organ]['new_model_dir'],
+                    'max_epochs': os.getenv('MAX_EPOCHS', 200)
                  }
-    metric_csv_path = training_process(input_dict)
+    metric_csv_path = training_process(lock, input_dict)
 
 
     # # # # # # # # # # # # # # # # #
     #   Convert metric csv to png   #
     # # # # # # # # # # # # # # # # #
     metric_csv_to_png(metric_csv_path)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", action="store_true")
+    args = parser.parse_args()
+
+
+    supported_organ_list = list(config['organ_to_mmar'].keys())
+    organ_list = os.getenv('ORGAN_LIST', supported_organ_list)
+    if type(organ_list)==str:
+        organ_list = json.loads(organ_list)
+
+    for organ in list(organ_list):
+        if organ not in supported_organ_list:
+            organ_list.remove(organ)
+    logger.info("Effective organ_list is {}. (Support only {})".format(organ_list, supported_organ_list))
+
+
+    lock = Lock()
+    proc_list = []
+    for organ in organ_list:
+        while logger.hasHandlers():
+            logger.removeHandler(logger.handlers[0])
+        if args.debug:
+            models_dir = config['models_dir']
+            log_file_path = os.path.join(models_dir, "{}.log".format(organ))
+            logger = get_logger(name=__file__, console_handler_level=None, file_handler_level=logging.INFO, file_name=log_file_path)
+        else:
+            logger = get_logger(name=__file__, console_handler_level=None, file_handler_level=None)
+        proc = Process(target=training, args=(lock, organ, 0))
+        proc.start()
+        proc_list.append(proc)
+
+        while logger.hasHandlers():
+            logger.removeHandler(logger.handlers[0])
+        logger = get_logger(name=__file__, console_handler_level=logging.INFO, file_handler_level=None)
+        logger.info("Training on {} starts.".format(organ))
+
+    for proc in proc_list:
+        proc.join()

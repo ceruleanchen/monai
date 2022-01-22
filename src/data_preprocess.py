@@ -29,7 +29,7 @@ config = read_config_yaml(config_file)
 # logging level (NOTSET=0 ; DEBUG=10 ; INFO=20 ; WARNING=30 ; ERROR=40 ; CRITICAL=50)
 logger = get_logger(name=__file__, console_handler_level=logging.INFO, file_handler_level=None)
 
-def data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir):
+def data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir, scale_min=float('inf'), scale_max=float('-inf')):
     # makedirs
     os_makedirs(imagesTr_dir)
     os_makedirs(labelsTr_dir)
@@ -45,9 +45,6 @@ def data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slices
     # 1: liver / 3: pancreas / 4: spleen / 5: kidney
     # obsolete_label_to_organ_mapping = {'1': 'liver', '3': 'pancreas', '4': 'spleen', '5': 'kidney', 'd': 'kidney'}
     obsolete_label_to_organ_mapping = {'1': 'liver', '3': 'pancreas', '4': 'spleen'}
-
-    scale_min = float('inf')
-    scale_max = float('-inf')
 
     for data_dir_name in os.listdir(dataset_dir):
         data_dir = os.path.join(dataset_dir, data_dir_name)
@@ -127,6 +124,7 @@ def data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slices
     config['scale_min'] = scale_min
     config['scale_max'] = scale_max
     write_config_yaml(config_file, config)
+    return scale_min, scale_max
 
 def data_preprocess_for_inference(data_dir_list, imagesTs_dir, slicesTs_dir):
     # makedirs
@@ -166,10 +164,16 @@ def data_preprocess_for_inference(data_dir_list, imagesTs_dir, slicesTs_dir):
     return scale_min, scale_max, imagesTs_path_list, slicesTs_path_list
 
 if __name__ == '__main__':
-    dataset_dir = os.path.join(monai_dir, 'CT_organ_nckuh')
-
+    # Prepare train_data
+    dataset_dir = os.path.join(config['monai_dataset_dir'], 'train_data')
     imagesTr_dir = os.path.join(config['train_data_dir'], 'imagesTr')
     labelsTr_dir = os.path.join(config['train_data_dir'], 'labelsTr')
     slicesTr_dir = os.path.join(config['train_data_dir'], 'slicesTr')
+    scale_min, scale_max = data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir)
 
-    data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir)
+    # Prepare val_data
+    dataset_dir = os.path.join(config['monai_dataset_dir'], 'val_data')
+    imagesTr_dir = os.path.join(config['val_data_dir'], 'imagesTr')
+    labelsTr_dir = os.path.join(config['val_data_dir'], 'labelsTr')
+    slicesTr_dir = os.path.join(config['val_data_dir'], 'slicesTr')
+    data_preprocess_for_training(dataset_dir, imagesTr_dir, labelsTr_dir, slicesTr_dir, scale_min, scale_max)

@@ -1,21 +1,45 @@
+production: retrain
+monai_dataset_dir: /home/aoi/monai/monai-dataset
+train_data_dir: /home/aoi/monai/train_data
+val_data_dir: /home/aoi/monai/val_data
+test_data_dir: /home/aoi/monai/test_data
+models_dir: /home/aoi/monai/models
+old_model_dir: null
 organ: liver
 organ_to_mmar:
   liver:
-    channel: 3
     name: clara_pt_liver_and_tumor_ct_segmentation_1
-  pancreas:
     channel: 3
+    mmar_dir: /home/aoi/monai/models/mmar/liver
+    old_model_dir: null
+    old_model_file_path: null
+    old_model_dice: 0.6376
+    new_model_dir: /home/aoi/monai/models/2022_01_21/liver
+    new_model_file_path: /home/aoi/monai/models/2022_01_21/liver/liver_2022_01_21.pth
+    new_model_dice: 0.9236
+  pancreas:
     name: clara_pt_pancreas_and_tumor_ct_segmentation_1
+    channel: 3
+    mmar_dir: /home/aoi/monai/models/mmar/pancreas
+    old_model_dir: null
+    old_model_file_path: null
+    old_model_dice: 0.0
+    new_model_dir: /home/aoi/monai/models/2022_01_21/pancreas
+    new_model_file_path: /home/aoi/monai/models/2022_01_21/pancreas/pancreas_2022_01_21.pth
+    new_model_dice: 0.4177
   spleen:
-    channel: 2
     name: clara_pt_spleen_ct_segmentation_1
-train_ratio: 0.8
+    channel: 2
+    mmar_dir: /home/aoi/monai/models/mmar/spleen
+    old_model_dir: null
+    old_model_file_path: null
+    old_model_dice: 0.1826
+    new_model_dir: /home/aoi/monai/models/2022_01_21/spleen
+    new_model_file_path: /home/aoi/monai/models/2022_01_21/spleen/spleen_2022_01_21.pth
+    new_model_dice: 0.8865
 roi_size:
 - 256
 - 256
 - 16
 scale_min: -135
 scale_max: 215
-train_data_dir: /home/aoi/monai/train_data
-test_data_dir: /home/aoi/monai/test_data
-models_dir: /home/aoi/monai/models

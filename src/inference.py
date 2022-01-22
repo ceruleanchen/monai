@@ -42,8 +42,6 @@ from logger import get_logger
 # Read config_file
 config_file = os.path.join(monai_dir, 'config/config.yaml')
 config = read_config_yaml(config_file)
-test_data_dir = config['test_data_dir']
-models_dir = config['models_dir']
 
 # Get logger
 # logging level (NOTSET=0 ; DEBUG=10 ; INFO=20 ; WARNING=30 ; ERROR=40 ; CRITICAL=50)
@@ -102,12 +100,12 @@ def setup_val_loader_and_post_transforms(imagesTs_path_list, scale_min, scale_ma
 
 def setup_models(organ_dict, gpu_num=0):
     for organ in organ_dict.keys():
-        device, mmar_dir, model = setup_model(organ, gpu_num)
-        model_file_path = os.path.join(mmar_dir, "best_metric_model.pth")
-        if os.path.isfile(model_file_path):
-            model.load_state_dict(torch.load(model_file_path))
+        device, model = setup_model(organ, gpu_num)
+        new_model_file_path = config['organ_to_mmar'][organ]['new_model_file_path']
+        if new_model_file_path!=None and os.path.isfile(new_model_file_path):
+            logger.info("Load model from {}".format(new_model_file_path))
+            model.load_state_dict(torch.load(new_model_file_path))
         organ_dict[organ]['device'] = device
-        organ_dict[organ]['mmar_dir'] = mmar_dir
         organ_dict[organ]['model'] = model
 
     return organ_dict
@@ -185,7 +183,6 @@ def infer(data_dir_list, organ_list, progress_manager_dict=None, update_progress
     #                               'channel': ,            #
     #                               'post_transforms': ,    #
     #                               'device': ,             #
-    #                               'mmar_dir': ,           #
     #                               'model': ,              #
     #                            },                         #
     #                   'pancreas': {},                     #
@@ -199,15 +196,17 @@ def infer(data_dir_list, organ_list, progress_manager_dict=None, update_progress
     #   Configuration   #
     # # # # # # # # # # #
     # 1: liver / 3: pancreas / 4: spleen / 5: kidney
+    test_data_dir = config['test_data_dir']
     roi_size = config['roi_size']
 
+    supported_organ_list = config['organ_to_mmar'].keys()
     for organ in list(organ_list):
-        if organ not in config['organ_to_mmar'].keys():
+        if organ not in supported_organ_list:
             organ_list.remove(organ)
         else:
             organ_dict[organ] = OrderedDict()
             organ_dict[organ]['channel'] = config['organ_to_mmar'][organ]['channel']
-    logger.info("Effective organ_list is {}".format(organ_list))
+    logger.info("Effective organ_list is {}. (Support only {})".format(organ_list, supported_organ_list))
     assert len(organ_list)>0, "organ_list cannot be empty"
 
 

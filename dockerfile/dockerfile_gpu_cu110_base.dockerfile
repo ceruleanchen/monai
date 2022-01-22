@@ -27,6 +27,8 @@ RUN apt-get install -y software-properties-common && \
 
 # Install python3.7 package
 RUN pip3 install torch==1.7.1+cu110 torchvision==0.8.2+cu110 torchaudio==0.7.2 -f https://download.pytorch.org/whl/torch_stable.html  && \
+    pip3 install afs2-datasource afs2-model && \
+    pip3 install pycryptodome && \
     pip3 install opencv-python && \
     pip3 install matplotlib && \
     pip3 install pandas && \
