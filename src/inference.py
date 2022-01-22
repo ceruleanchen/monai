@@ -199,7 +199,7 @@ def infer(data_dir_list, organ_list, progress_manager_dict=None, update_progress
     test_data_dir = config['test_data_dir']
     roi_size = config['roi_size']
 
-    supported_organ_list = config['organ_to_mmar'].keys()
+    supported_organ_list = list(config['organ_to_mmar'].keys())
     for organ in list(organ_list):
         if organ not in supported_organ_list:
             organ_list.remove(organ)

@@ -82,76 +82,118 @@ def print_config_yaml(config_file):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--print_production", action="store_true")
+    parser.add_argument("--set_production", type=str)
     args = parser.parse_args()
 
     # Read config_file
     config_file = os.path.join(current_dir, 'config.yaml')
     config_dict = read_config_yaml(config_file)
 
-    config_dict['production'] = 'retrain' # retrain / retrain_aifs / inference
-    if args.print_production:
-        subdict = {key:config_dict[key] for key in ['production'] if key in config_dict}
-        print(dict(subdict))
+    if args.set_production:
+        config_dict['production'] = args.set_production # retrain / retrain_aifs / inference
+        subdict = {'production': args.set_production}
+        print(subdict)
     else:
-        today_date = time.strftime("%Y_%m_%d")
-
         config_dict['train_data_dir'] = os.path.join(monai_dir, 'train_data')
         config_dict['val_data_dir'] = os.path.join(monai_dir, 'val_data')
         config_dict['test_data_dir'] = os.path.join(monai_dir, 'test_data')
         config_dict['models_dir'] = os.path.join(monai_dir, 'models')
-        # config_dict['old_model_dir'] # model_repo_manip.py updated this: os.path.join(monai_dir, 'models/old')
-        config_dict['organ_list'] = None # train.py updated this: ['liver', 'pancreas', 'spleen']
+        # config_dict['old_model_dir'] # model_repo_manip.py update this in retrain or retrain_aifs mode: os.path.join(monai_dir, 'models/old')
+        config_dict['organ_list'] = None # train.py or inference_api.py update this in all modes: ['liver', 'pancreas', 'spleen']
         config_dict['roi_size'] = (256, 256, 16)
-
 
         # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_liver_and_tumor_ct_segmentation
         # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_pancreas_and_tumor_ct_segmentation
         # https://catalog.ngc.nvidia.com/orgs/nvidia/teams/med/models/clara_pt_spleen_ct_segmentation
-        config_dict['organ_to_mmar'] = \
-            {
-                'liver'   : OrderedDict({
-                            'name': 'clara_pt_liver_and_tumor_ct_segmentation_1',
-                            'channel': 3,
-                            'mmar_dir': os.path.join(monai_dir, 'models/mmar/liver'),
-                            'old_model_dir': os.path.join(config_dict['old_model_dir'], 'liver') if config_dict['old_model_dir'] else None,
-                            'old_model_file_path': None,
-                            'old_model_dice': None,
-                            'new_model_dir': os.path.join(monai_dir, 'models/{}/liver'.format(today_date)),
-                            'new_model_file_path': None,
-                            'new_model_dice': None
-                            }),
-                'pancreas': OrderedDict({
-                            'name': 'clara_pt_pancreas_and_tumor_ct_segmentation_1',
-                            'channel': 3,
-                            'mmar_dir': os.path.join(monai_dir, 'models/mmar/pancreas'),
-                            'old_model_dir': os.path.join(config_dict['old_model_dir'], 'pancreas') if config_dict['old_model_dir'] else None,
-                            'old_model_file_path': None,
-                            'old_model_dice': None,
-                            'new_model_dir': os.path.join(monai_dir, 'models/{}/pancreas'.format(today_date)),
-                            'new_model_file_path': None,
-                            'new_model_dice': None
-                            }),
-                'spleen'  : OrderedDict({
-                            'name': 'clara_pt_spleen_ct_segmentation_1',
-                            'channel': 2,
-                            'mmar_dir': os.path.join(monai_dir, 'models/mmar/spleen'),
-                            'old_model_dir': os.path.join(config_dict['old_model_dir'], 'spleen') if config_dict['old_model_dir'] else None,
-                            'old_model_file_path': None,
-                            'old_model_dice': None,
-                            'new_model_dir': os.path.join(monai_dir, 'models/{}/spleen'.format(today_date)),
-                            'new_model_file_path': None,
-                            'new_model_dice': None
-                            })
-            }
+        if config_dict['production'] == 'retrain' or config_dict['production'] == 'retrain_aifs':
+            today_date = time.strftime("%Y_%m_%d")
+            config_dict['organ_to_mmar'] = \
+                {
+                    'liver'   : OrderedDict({
+                                'name': 'clara_pt_liver_and_tumor_ct_segmentation_1',
+                                'channel': 3,
+                                'mmar_dir': os.path.join(monai_dir, 'models/mmar/liver'),
+                                'old_model_dir': os.path.join(config_dict['old_model_dir'], 'liver') if config_dict['old_model_dir'] else None,
+                                'old_model_file_path': None,
+                                'old_model_dice': None,
+                                'new_model_dir': os.path.join(monai_dir, 'models/{}/liver'.format(today_date)),
+                                'new_model_file_path': None,
+                                'new_model_dice': None
+                                }),
+                    'pancreas': OrderedDict({
+                                'name': 'clara_pt_pancreas_and_tumor_ct_segmentation_1',
+                                'channel': 3,
+                                'mmar_dir': os.path.join(monai_dir, 'models/mmar/pancreas'),
+                                'old_model_dir': os.path.join(config_dict['old_model_dir'], 'pancreas') if config_dict['old_model_dir'] else None,
+                                'old_model_file_path': None,
+                                'old_model_dice': None,
+                                'new_model_dir': os.path.join(monai_dir, 'models/{}/pancreas'.format(today_date)),
+                                'new_model_file_path': None,
+                                'new_model_dice': None
+                                }),
+                    'spleen'  : OrderedDict({
+                                'name': 'clara_pt_spleen_ct_segmentation_1',
+                                'channel': 2,
+                                'mmar_dir': os.path.join(monai_dir, 'models/mmar/spleen'),
+                                'old_model_dir': os.path.join(config_dict['old_model_dir'], 'spleen') if config_dict['old_model_dir'] else None,
+                                'old_model_file_path': None,
+                                'old_model_dice': None,
+                                'new_model_dir': os.path.join(monai_dir, 'models/{}/spleen'.format(today_date)),
+                                'new_model_file_path': None,
+                                'new_model_dice': None
+                                })
+                }
 
-        for organ in config_dict['organ_to_mmar']:
-            old_model_dir = config_dict['organ_to_mmar'][organ]['old_model_dir']
-            if old_model_dir != None:
-                old_model_file_path_list = glob.glob(os.path.join(old_model_dir, "*.pth"))
-                if len(old_model_file_path_list) > 0:
-                    config_dict['organ_to_mmar'][organ]['old_model_file_path'] = old_model_file_path_list[0]
+            for organ in config_dict['organ_to_mmar']:
+                old_model_dir = config_dict['organ_to_mmar'][organ]['old_model_dir']
+                if old_model_dir != None:
+                    old_model_file_path_list = glob.glob(os.path.join(old_model_dir, "*.pth"))
+                    if len(old_model_file_path_list) > 0:
+                        config_dict['organ_to_mmar'][organ]['old_model_file_path'] = old_model_file_path_list[0]
+        else:
+            config_dict['organ_to_mmar'] = \
+                {
+                    'liver'   : OrderedDict({
+                                'name': 'clara_pt_liver_and_tumor_ct_segmentation_1',
+                                'channel': 3,
+                                'mmar_dir': os.path.join(monai_dir, 'models/mmar/liver'),
+                                'old_model_dir': None,
+                                'old_model_file_path': None,
+                                'old_model_dice': None,
+                                'new_model_dir': os.path.join(monai_dir, 'models/inference/liver'),
+                                'new_model_file_path': None,
+                                'new_model_dice': None
+                                }),
+                    'pancreas': OrderedDict({
+                                'name': 'clara_pt_pancreas_and_tumor_ct_segmentation_1',
+                                'channel': 3,
+                                'mmar_dir': os.path.join(monai_dir, 'models/mmar/pancreas'),
+                                'old_model_dir': None,
+                                'old_model_file_path': None,
+                                'old_model_dice': None,
+                                'new_model_dir': os.path.join(monai_dir, 'models/inference/pancreas'),
+                                'new_model_file_path': None,
+                                'new_model_dice': None
+                                }),
+                    'spleen'  : OrderedDict({
+                                'name': 'clara_pt_spleen_ct_segmentation_1',
+                                'channel': 2,
+                                'mmar_dir': os.path.join(monai_dir, 'models/mmar/spleen'),
+                                'old_model_dir': None,
+                                'old_model_file_path': None,
+                                'old_model_dice': None,
+                                'new_model_dir': os.path.join(monai_dir, 'models/inference/spleen'),
+                                'new_model_file_path': None,
+                                'new_model_dice': None
+                                })
+                }
 
+            for organ in config_dict['organ_to_mmar']:
+                new_model_dir = config_dict['organ_to_mmar'][organ]['new_model_dir']
+                if new_model_dir != None:
+                    new_model_file_path_list = glob.glob(os.path.join(new_model_dir, "*.pth"))
+                    if len(new_model_file_path_list) > 0:
+                        config_dict['organ_to_mmar'][organ]['new_model_file_path'] = new_model_file_path_list[0]
 
     # Write config_file
     write_config_yaml(config_file, config_dict)

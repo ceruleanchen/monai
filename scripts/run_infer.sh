@@ -58,8 +58,8 @@ function Fun_EvalCmd()
 printf "${GREEN}cd $MONAI_DIR/config${NC}\n"
 cd $MONAI_DIR/config
 
-printf "${GREEN}python config.py --set_production retrain${NC}\n"
-config_result=`python config.py --set_production retrain`
+printf "${GREEN}python config.py --set_production inference${NC}\n"
+config_result=`python config.py --set_production inference`
 Fun_ConvertConfigResult "$config_result" 1
 
 if [ "$PRODUCTION" != "retrain_aifs" ]
@@ -71,26 +71,6 @@ then
     YELLOW='\033[0;33m'
 fi
 
-# # # # # # # # # # # # # # # # # # # # # # # # #
-#     Download dataset by Datasource SDK        #
-# # # # # # # # # # # # # # # # # # # # # # # # #
-lCmdList=(
-            "cd $MONAI_DIR" \
-            "python src/s3_manip.py"
-         )
-Fun_EvalCmd "${lCmdList[*]}"
-
-
-# # # # # # # # # # # # # # # # # # # # #
-#     Download model by Model SDK       #
-# # # # # # # # # # # # # # # # # # # # #
-lCmdList=(
-            "cd $MONAI_DIR/src" \
-            "python model_repo_manip.py --download"
-         )
-Fun_EvalCmd "${lCmdList[*]}"
-
-
 # # # # # # # # # # # # # # # # #
 #     Global Configuration      #
 # # # # # # # # # # # # # # # # #
@@ -101,31 +81,11 @@ lCmdList=(
 Fun_EvalCmd "${lCmdList[*]}"
 
 
-# # # # # # # # # # # # # # #
-#     Data Preparation      #
-# # # # # # # # # # # # # # #
-lCmdList=(
-            "cd $MONAI_DIR/src" \
-            "python data_preprocess.py"
-         )
-Fun_EvalCmd "${lCmdList[*]}"
-
-
 # # # # # # # # # # #
 #     Training      #
 # # # # # # # # # # #
 lCmdList=(
             "cd $MONAI_DIR/src" \
-            "python train.py"
-         )
-Fun_EvalCmd "${lCmdList[*]}"
-
-
-# # # # # # # # # # # # # # # # # # # #
-#     Upload model by Model SDK       #
-# # # # # # # # # # # # # # # # # # # #
-lCmdList=(
-            "cd $MONAI_DIR/src" \
-            "python model_repo_manip.py --upload"
+            "python inference_api.py"
          )
 Fun_EvalCmd "${lCmdList[*]}"

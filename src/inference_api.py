@@ -21,7 +21,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 monai_dir = os.path.dirname(current_dir)
 
 sys.path.append(os.path.join(monai_dir, "config"))
-from config import read_config_yaml, write_config_yaml
+from config import read_config_yaml, write_config_yaml, write_config_yaml_with_key_value
 
 sys.path.append(os.path.join(monai_dir, "utils"))
 from utils import os_makedirs
@@ -246,11 +246,11 @@ class MonaiApp(object):
 
     # @app.route("/predict", methods=['POST'])
     async def start_inference(self, request):
-        organ_list = list(config['organ_to_mmar'].keys())
+        supported_organ_list = list(config['organ_to_mmar'].keys())
         empty_response = {"message": ""}
 
         request_dict = request.json
-        self.organs = request_dict.get('organs', organ_list)
+        self.organs = request_dict.get('organs', supported_organ_list)
         self.endpoint = request_dict.get('endpoint', None)
         self.access_key = request_dict.get('access_key', None)
         self.secret_key = request_dict.get('secret_key', None)
@@ -260,14 +260,18 @@ class MonaiApp(object):
 
         # Check if the input organs to be inferred are all supported
         unsupported_organ_list = []
-        for organ in self.organs:
-            if organ not in organ_list:
+        for organ in list(self.organs):
+            if organ not in supported_organ_list:
                 unsupported_organ_list.append(organ)
-        
+                self.organs.remove(organ)
+
         if len(unsupported_organ_list) > 0:
             empty_response["message"] = "Fail: Does not support '{}' inference. Support only {}"\
-                                        .format(', '.join(unsupported_organ_list), ', '.join(organ_list))
+                                        .format(', '.join(unsupported_organ_list), ', '.join(supported_organ_list))
             return response.json(empty_response)
+
+        config['organ_list'] = self.organs
+        write_config_yaml_with_key_value(config_file, 'organ_list', self.organs)
 
         # Check if the S3 credentials
         if self.endpoint and self.access_key and self.secret_key and self.bucket and self.asset_group:
