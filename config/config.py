@@ -82,15 +82,15 @@ def print_config_yaml(config_file):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--set_production", action="store_true")
+    parser.add_argument("--print_production", action="store_true")
     args = parser.parse_args()
 
     # Read config_file
     config_file = os.path.join(current_dir, 'config.yaml')
     config_dict = read_config_yaml(config_file)
 
-    config_dict['production'] = 'retrain' # train / retrain / retrain_aifs / inference
-    if args.set_production:
+    config_dict['production'] = 'retrain' # retrain / retrain_aifs / inference
+    if args.print_production:
         subdict = {key:config_dict[key] for key in ['production'] if key in config_dict}
         print(dict(subdict))
     else:
@@ -100,7 +100,7 @@ if __name__ == "__main__":
         config_dict['val_data_dir'] = os.path.join(monai_dir, 'val_data')
         config_dict['test_data_dir'] = os.path.join(monai_dir, 'test_data')
         config_dict['models_dir'] = os.path.join(monai_dir, 'models')
-        config_dict['old_model_dir'] = None # model_repo_manip.py updated this: os.path.join(monai_dir, 'models/old')
+        # config_dict['old_model_dir'] # model_repo_manip.py updated this: os.path.join(monai_dir, 'models/old')
         config_dict['organ_list'] = None # train.py updated this: ['liver', 'pancreas', 'spleen']
         config_dict['roi_size'] = (256, 256, 16)
 

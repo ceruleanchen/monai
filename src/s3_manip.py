@@ -95,7 +95,7 @@ def download_from_s3(bucket_name=default_bucket_name):
                 'bucket': bucket_name,
                 'blobs': {
                     'files': [],
-                    'folders': ['train_data','val_data', 'models']
+                    'folders': ['train_data', 'retrain_data', 'val_data', 'models']
                 }
             }]
         )

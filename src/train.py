@@ -236,8 +236,8 @@ def training_process(lock, input_dict):
             metric_ele_list = []
             metric_ele_list.append(epoch+1)
             # training
-            logger.info("-" * 10)
-            logger.info(f"epoch {epoch + 1}/{max_epochs}")
+            logger.debug("-" * 10)
+            logger.debug(f"epoch {epoch + 1}/{max_epochs}")
             model.train()
             epoch_loss = 0
             step = 0
@@ -253,14 +253,14 @@ def training_process(lock, input_dict):
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
-                logger.info(
+                logger.debug(
                     f"{step}/{math.ceil(len(train_ds) / train_loader.batch_size)}, "
                     f"train_loss: {loss.item():.4f}")
             epoch_loss /= step
             # epoch_loss_values.append(epoch_loss)
             round_epoch_loss = round(epoch_loss, 4)
             metric_ele_list.append(round_epoch_loss)
-            logger.info(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
+            logger.debug(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
             # validation
             if (epoch + 1) % val_interval == 0:
@@ -298,10 +298,10 @@ def training_process(lock, input_dict):
                         config['organ_to_mmar'][organ]['new_model_dice'] = round_metric
                         write_config_yaml(config_file, config)
                         lock.release()
-                        logger.info("saved new best metric model")
+                        logger.debug("saved new best metric model")
 
-                    logger.info(f"current epoch: {epoch + 1}    current mean dice: {metric:.4f}")
-                    logger.info(f"best mean dice: {best_metric:.4f} at epoch: {best_metric_epoch}")
+                    logger.debug(f"current epoch: {epoch + 1}    current mean dice: {metric:.4f}")
+                    logger.debug(f"best mean dice: {best_metric:.4f} at epoch: {best_metric_epoch}")
             else:
                 metric_ele_list.append('')
 
@@ -310,7 +310,7 @@ def training_process(lock, input_dict):
                 writer.writerows(metric_list)
                 metric_list = []
 
-        logger.info(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}")
+        logger.debug(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}")
         if len(metric_list) > 0:
             writer.writerows(metric_list)
             metric_list = []
@@ -378,8 +378,10 @@ def training(lock, organ, gpu_num=0):
     # # # # # # # # # # # # # # # # # # #
     device, model = setup_model(organ, gpu_num=gpu_num)
     if old_model_file_path != None and os.path.isfile(old_model_file_path):
-        logger.info("Load model from {}".format(old_model_file_path))
+        logger.info("Load {} model from {}".format(organ, old_model_file_path))
         model.load_state_dict(torch.load(old_model_file_path))
+    else:
+        logger.info("Load default {} model from MMAR".format(organ))
 
     loss_function = DiceLoss(to_onehot_y=True, softmax=True)
     optimizer = torch.optim.Adam(model.parameters(), 1e-4)
@@ -450,21 +452,21 @@ if __name__ == "__main__":
     lock = Lock()
     proc_list = []
     for organ in organ_list:
-        while logger.hasHandlers():
-            logger.removeHandler(logger.handlers[0])
         if args.debug:
+            while logger.hasHandlers():
+                logger.removeHandler(logger.handlers[0])
             models_dir = config['models_dir']
             log_file_path = os.path.join(models_dir, "{}.log".format(organ))
             logger = get_logger(name=__file__, console_handler_level=None, file_handler_level=logging.INFO, file_name=log_file_path)
-        else:
-            logger = get_logger(name=__file__, console_handler_level=None, file_handler_level=None)
+
         proc = Process(target=training, args=(lock, organ, 0))
         proc.start()
         proc_list.append(proc)
 
-        while logger.hasHandlers():
-            logger.removeHandler(logger.handlers[0])
-        logger = get_logger(name=__file__, console_handler_level=logging.INFO, file_handler_level=None)
+        if args.debug:
+            while logger.hasHandlers():
+                logger.removeHandler(logger.handlers[0])
+            logger = get_logger(name=__file__, console_handler_level=logging.INFO, file_handler_level=None)
         logger.info("Training on {} starts.".format(organ))
 
     for proc in proc_list:

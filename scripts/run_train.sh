@@ -58,8 +58,8 @@ function Fun_EvalCmd()
 printf "${GREEN}cd $MONAI_DIR/config${NC}\n"
 cd $MONAI_DIR/config
 
-printf "${GREEN}python config.py --set_production${NC}\n"
-config_result=`python config.py --set_production`
+printf "${GREEN}python config.py --print_production${NC}\n"
+config_result=`python config.py --print_production`
 Fun_ConvertConfigResult "$config_result" 1
 
 if [ "$PRODUCTION" != "retrain_aifs" ]
