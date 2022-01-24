@@ -153,7 +153,10 @@ def setup_model(organ, gpu_num=0):
     mmar_dir = config['organ_to_mmar'][organ]['mmar_dir']
     os_makedirs(mmar_dir, keep_exists=True)
 
-    device = torch.device("cuda:{}".format(gpu_num) if torch.cuda.is_available() else "cpu")
+    if config['production'] == 'retrain_aifs' or config['production'] == 'inference_aifs':
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device("cuda:{}".format(gpu_num) if torch.cuda.is_available() else "cpu")
     unet_model = load_from_mmar(
         config['organ_to_mmar'][organ]['name'], mmar_dir=mmar_dir,
         map_location=device, pretrained=True)

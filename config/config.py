@@ -90,7 +90,7 @@ if __name__ == "__main__":
     config_dict = read_config_yaml(config_file)
 
     if args.set_production:
-        config_dict['production'] = args.set_production # retrain / retrain_aifs / inference
+        config_dict['production'] = args.set_production # retrain / retrain_aifs / inference / inference_aifs
         subdict = {'production': args.set_production}
         print(subdict)
     else:
