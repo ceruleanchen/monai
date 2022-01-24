@@ -157,6 +157,7 @@ def setup_model(organ, gpu_num=0):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         device = torch.device("cuda:{}".format(gpu_num) if torch.cuda.is_available() else "cpu")
+
     unet_model = load_from_mmar(
         config['organ_to_mmar'][organ]['name'], mmar_dir=mmar_dir,
         map_location=device, pretrained=True)
@@ -382,7 +383,7 @@ def training(lock, organ, gpu_num=0):
     device, model = setup_model(organ, gpu_num=gpu_num)
     if old_model_file_path != None and os.path.isfile(old_model_file_path):
         logger.info("Load {} model from {}".format(organ, old_model_file_path))
-        model.load_state_dict(torch.load(old_model_file_path))
+        model.load_state_dict(torch.load(old_model_file_path, map_location=device))
     else:
         logger.info("Load default {} model from MMAR".format(organ))
 

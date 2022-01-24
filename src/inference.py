@@ -104,7 +104,7 @@ def setup_models(organ_dict, gpu_num=0):
         new_model_file_path = config['organ_to_mmar'][organ]['new_model_file_path']
         if new_model_file_path!=None and os.path.isfile(new_model_file_path):
             logger.info("Load model from {}".format(new_model_file_path))
-            model.load_state_dict(torch.load(new_model_file_path))
+            model.load_state_dict(torch.load(new_model_file_path, map_location=device))
         organ_dict[organ]['device'] = device
         organ_dict[organ]['model'] = model
 
