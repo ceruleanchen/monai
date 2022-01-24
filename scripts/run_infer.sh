@@ -62,7 +62,7 @@ printf "${GREEN}python config.py --set_production inference${NC}\n"
 config_result=`python config.py --set_production inference`
 Fun_ConvertConfigResult "$config_result" 1
 
-if [ "$PRODUCTION" != "retrain_aifs" ]
+if [ "$PRODUCTION" != "retrain_aifs" ] && [ "$PRODUCTION" != "inference_aifs" ]
 then
     # Color
     NC='\033[0m'
