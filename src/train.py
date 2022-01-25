@@ -30,7 +30,6 @@ import tempfile
 import shutil
 import os
 import sys
-import json
 import glob
 import logging
 import random
@@ -443,7 +442,8 @@ if __name__ == "__main__":
     supported_organ_list = list(config['organ_to_mmar'].keys())
     organ_list = os.getenv('ORGAN_LIST', supported_organ_list)
     if type(organ_list)==str:
-        organ_list = json.loads(organ_list)
+        organ_list = organ_list.lstrip('[').rstrip(']').split(',')
+        organ_list = [organ.lstrip(' ').rstrip(' ') for organ in organ_list]
 
     for organ in list(organ_list):
         if organ not in supported_organ_list:
