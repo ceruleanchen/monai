@@ -422,7 +422,7 @@ def training(lock, organ, gpu_num=0):
                     'optimizer': optimizer,
                     'dice_metric': dice_metric,
                     'new_model_dir': config['organ_to_mmar'][organ]['new_model_dir'],
-                    'max_epochs': os.getenv('MAX_EPOCHS', 200)
+                    'max_epochs': int(os.getenv('MAX_EPOCHS', 200))
                  }
     metric_csv_path = training_process(lock, input_dict)
 
