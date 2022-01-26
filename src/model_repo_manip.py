@@ -84,21 +84,25 @@ def upload_to_model_repo(repo_name=default_repo_name):
     os_makedirs(new_model_dir)
 
     tags = {}
-    for organ in config['organ_list']:
-        old_model_dice = config['organ_to_mmar'][organ]['old_model_dice']
-        new_model_dice = config['organ_to_mmar'][organ]['new_model_dice']
-        if new_model_dice >= old_model_dice:
-            src_dir = config['organ_to_mmar'][organ]['new_model_dir']
-            dst_dir = os.path.join(new_model_dir, organ)
-            shutil_copytree(src_dir, dst_dir)
-            tags['old/new ({})'.format(organ)] = '{}/{}'.format(old_model_dice, new_model_dice)
-        else:
-            old_model_file_path = config['organ_to_mmar'][organ]['old_model_file_path']
-            if old_model_file_path!=None:
-                src_dir = config['organ_to_mmar'][organ]['old_model_dir']
+    supported_organ_list = list(config['organ_to_mmar'].keys())
+    for organ in supported_organ_list:
+        if organ in config['organ_list']:
+            old_model_dice = config['organ_to_mmar'][organ]['old_model_dice']
+            new_model_dice = config['organ_to_mmar'][organ]['new_model_dice']
+            if new_model_dice >= old_model_dice:
+                src_dir = config['organ_to_mmar'][organ]['new_model_dir']
                 dst_dir = os.path.join(new_model_dir, organ)
                 shutil_copytree(src_dir, dst_dir)
-            tags['old/new ({})'.format(organ)] = '{}/{}'.format(old_model_dice, old_model_dice)
+                tags['old/new ({})'.format(organ)] = '{}/{}'.format(old_model_dice, new_model_dice)
+            else:
+                old_model_file_path = config['organ_to_mmar'][organ]['old_model_file_path']
+                if old_model_file_path!=None:
+                    src_dir = config['organ_to_mmar'][organ]['old_model_dir']
+                    dst_dir = os.path.join(new_model_dir, organ)
+                    shutil_copytree(src_dir, dst_dir)
+                tags['old/new ({})'.format(organ)] = '{}/{}'.format(old_model_dice, old_model_dice)
+        else:
+            tags['old/new ({})'.format(organ)] = 'NA/NA'
 
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
