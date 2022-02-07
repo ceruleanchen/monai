@@ -44,4 +44,5 @@ RUN pip3 install monai && \
     rm requirements-dev.txt requirements-min.txt requirements.txt && \
     pip3 install dicom2nifti && \
     pip3 install sanic && \
-    pip3 install boto3
+    pip3 install boto3 && \
+    pip3 install nest_asyncio

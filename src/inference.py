@@ -140,6 +140,19 @@ def contours_to_json(organ, contours, png_file_name, image_shape, json_file_path
         with open(json_file_path, 'w') as json_file:
             json.dump(json_dict, json_file, sort_keys=False, indent=2, separators=(',', ': '))
 
+def empty_json(png_file_name, image_shape, json_file_path):
+    json_dict = OrderedDict()
+    json_dict["version"] = "3.16.7"
+    json_dict["flags"] = dict()
+    json_dict["shapes"] = list()
+    json_dict["imagePath"] = png_file_name
+    json_dict["imageData"] = None
+    json_dict["imageHeight"] = image_shape[0]
+    json_dict["imageWidth"] = image_shape[1]
+
+    with open(json_file_path, 'w') as json_file:
+        json.dump(json_dict, json_file, sort_keys=False, indent=2, separators=(',', ': '))
+
 def run_infer(organ, organ_ele_dict, val_data, roi_size, slicesTs_list, labelsTs_data_dir):
     post_transforms = organ_ele_dict['post_transforms']
     device = organ_ele_dict['device']
