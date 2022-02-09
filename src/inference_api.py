@@ -317,6 +317,8 @@ class MonaiApp(object):
 
     # @app.route("/model", methods=['POST'])
     async def download_model(self, request):
+        empty_response = {"message": ""}
+
         models_dir = config['models_dir']
         request_dict = request.json
         logger.info("Download model request: {}".format(request_dict))
@@ -342,7 +344,9 @@ class MonaiApp(object):
                     if len(new_model_file_path_list) > 0:
                         config['organ_to_mmar'][organ]['new_model_file_path'] = new_model_file_path_list[0]
             write_config_yaml(config_file, config)
-        return response.json({'status': 'success'})
+
+        empty_response["message"] = "Success: downloading model is done"
+        return response.json(empty_response)
 
     # @app.route("/label", methods=['POST', 'GET'])
     async def get_label(self, request):

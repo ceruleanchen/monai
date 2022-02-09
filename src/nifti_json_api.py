@@ -8,6 +8,7 @@ import threading
 import zipfile
 import glob
 import pydicom
+import dicom2nifti
 import nibabel as nib
 import csv
 import cv2
@@ -33,7 +34,7 @@ sys.path.append(os.path.join(monai_dir, "config"))
 from config import read_config_yaml, write_config_yaml, write_config_yaml_with_key_value
 
 sys.path.append(os.path.join(monai_dir, "utils"))
-from utils import os_makedirs, os_remove, shutil_copyfile
+from utils import os_makedirs, os_remove, shutil_copyfile, shutil_rmtree
 from logger import get_logger
 
 # Read config_file
@@ -126,31 +127,39 @@ class NiftiApp(object):
                     slices_list.append([slice_location, slice_location_to_file_name_mapping[slice_location]])
 
             # nifti to json
-            nifti_file_path = glob.glob('{}/*.nii.gz'.format(data_dir))[0]
-            image_arr = nib.load(nifti_file_path).get_data()
-            num_slices = image_arr.shape[2]
-            for idx in range(num_slices):
-                image = np.flip(image_arr[:,:,idx].astype('uint8').T, axis=0)
-                slice_location, dcm_file_name = slices_list[idx]
-                json_file_name = dcm_file_name.replace('.dcm', '.json')
-                json_file_path = os.path.join(data_dir, json_file_name)
-                png_file_name = dcm_file_name.replace('.dcm', '.png')
-                os_remove(json_file_path)
+            nifti_file_path_list = glob.glob('{}/*.nii.gz'.format(data_dir))
+            for nifti_idx, nifti_file_path in enumerate(nifti_file_path_list):
+                nifti_file_name = os.path.basename(nifti_file_path) # '001_liver.nii.gz'
+                nifti_file_id = nifti_file_name.split('.')[0]       # '001_liver'
+                organ = nifti_file_id.split('_')[1]                 # 'liver'
 
-                if np.any(image>0):
-                    ret, thresh = cv2.threshold(image, 0, 255, 0)
-                    image_bgr = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
-                    erosion = cv2.erode(image_bgr, kernel, iterations = 2)
-                    dilation = cv2.dilate(erosion, kernel, iterations = 2)
+                image_arr = nib.load(nifti_file_path).get_data()
+                num_slices = image_arr.shape[2]
+                for slice_idx in range(num_slices):
+                    image = np.flip(image_arr[:,:,slice_idx].astype('uint8').T, axis=0)
+                    slice_location, dcm_file_name = slices_list[slice_idx]
+                    json_file_name = dcm_file_name.replace('.dcm', '.json')
+                    json_file_path = os.path.join(data_dir, json_file_name)
+                    png_file_name = dcm_file_name.replace('.dcm', '.png')
+                    if nifti_idx==0:
+                        os_remove(json_file_path)
 
-                    image_gray = cv2.cvtColor(dilation, cv2.COLOR_BGR2GRAY)
-                    contours, heirarchy = cv2.findContours(image_gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    contours_to_json('1', contours, png_file_name, image.shape, json_file_path)
-                else:
-                    empty_json(png_file_name, image.shape, json_file_path)
+                    if np.any(image>0):
+                        ret, thresh = cv2.threshold(image, 0, 255, 0)
+                        image_bgr = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+                        erosion = cv2.erode(image_bgr, kernel, iterations = 2)
+                        dilation = cv2.dilate(erosion, kernel, iterations = 2)
 
-                s3_json_file_path = os.path.join(s3_folder, json_file_name)
-                upload_s3(endpoint, access_key, secret_key, bucket, json_file_path, s3_json_file_path)
+                        image_gray = cv2.cvtColor(dilation, cv2.COLOR_BGR2GRAY)
+                        contours, heirarchy = cv2.findContours(image_gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        contours_to_json(organ, contours, png_file_name, image.shape, json_file_path)
+                    elif nifti_idx==0:
+                        empty_json(png_file_name, image.shape, json_file_path)
+
+                    if nifti_idx==len(nifti_file_path_list)-1:
+                        s3_json_file_path = os.path.join(s3_folder, json_file_name)
+                        print(slice_idx, s3_json_file_path)
+                        upload_s3(endpoint, access_key, secret_key, bucket, json_file_path, s3_json_file_path)
 
     # Import (nifti to json)
     # @app.route("/import", methods=['POST'])
@@ -169,7 +178,7 @@ class NiftiApp(object):
             if isinstance(folder, list):
                 self.import_func_thread = threading.Thread(target=self.run_import, args=(endpoint, access_key, secret_key, bucket, folder))
                 self.import_func_thread.start()
-                empty_response["message"] = "Success: Total {} patients will be dealt with by batch mode".format(len(folder))
+                empty_response["message"] = "Success: Total {} patients will be imported by batch mode".format(len(folder))
                 return response.json(empty_response)
             else:
                 empty_response["message"] = "Fail: folder is not list"
@@ -188,9 +197,6 @@ class NiftiApp(object):
             empty_response["message"] = "Fail: Lack of {}".format(', '.join(msg_list))
             return response.json(empty_response)
 
-        empty_response["message"] = "Success: inference is ongoing"
-        return response.json(empty_response)
-
     def run_export(self, endpoint, access_key, secret_key, bucket, asset_group):
         for asset in asset_group:
             category_name = asset.get("category_name", None)
@@ -200,21 +206,73 @@ class NiftiApp(object):
             bucket_dir = download_s3(endpoint, access_key, secret_key, bucket, file_list=files, folder_list=[])
 
             # Copy files from bucket_dir to export_dir
-            export_dir = os.path.join(bucket_dir, 'export', category_name)
-            os_makedirs(export_dir)
+            export_dir = os.path.join(bucket_dir, 'export')
+            export_category_dir = os.path.join(export_dir, category_name)
+            os_makedirs(export_category_dir)
 
             dcm_file_list = []
             json_file_list = []
             for s3_file_path in files:
                 file_name = os.path.basename(s3_file_path)
                 src_file_path = os.path.join(bucket_dir, s3_file_path)
-                dst_file_path = os.path.join(export_dir, file_name)
+                dst_file_path = os.path.join(export_category_dir, file_name)
                 if os.path.splitext(file_name)[1] == '.dcm':
                     dcm_file_list.append(dst_file_path)
                 if os.path.splitext(file_name)[1] == '.json':
                     json_file_list.append(dst_file_path)
                 shutil_copyfile(src_file_path, dst_file_path)
 
+            # Convert polygon to mask
+            organ_list = list(config['organ_to_mmar'].keys()) # organ_list = ['liver', 'pancreas', 'spleen']
+            organ_dict = dict.fromkeys(organ_list)
+            for organ in organ_dict:
+                label_dir = export_category_dir + '_' + organ
+                organ_dict[organ] = {'used': False, 'label_dir': label_dir}
+                os_makedirs(label_dir)
+
+            for dcm_file_path, json_file_path in zip(dcm_file_list, json_file_list):
+                dcm_file_name = os.path.basename(dcm_file_path)
+                ds = pydicom.read_file(dcm_file_path)
+                ds.RescaleIntercept = 0
+                ds.WindowCenter = 3.0
+                ds.WindowWidth = 6.0
+                img = ds.pixel_array
+                mask_bgr = np.zeros([*img.shape, 3], dtype='uint8')
+                for organ in organ_list:
+                    organ_dict[organ]['mask_bgr'] = np.copy(mask_bgr)
+
+                with open(json_file_path) as jsfile:
+                    js = json.load(jsfile)
+
+                for shape in js['shapes']:
+                    label = shape['label']
+                    if label not in organ_list:
+                        logger.warning("label = {} does not support. Support only {}".format(label, organ_list))
+                        continue
+
+                    if organ_dict[label]['used'] == False:
+                        organ_dict[label]['used'] = True
+
+                    contour = np.expand_dims(np.array(shape['points']), axis=1)
+                    contour = contour.astype('int32')
+                    val = 1
+                    cv2.drawContours(organ_dict[label]['mask_bgr'], [contour], -1, (val,val,val),-1)
+
+                for organ in organ_list:
+                    mask_gray = cv2.cvtColor(organ_dict[organ]['mask_bgr'], cv2.COLOR_BGR2GRAY)
+                    mask_gray = mask_gray.astype('int16') # should be numpy.float64?
+                    ds.PixelData = mask_gray
+                    ds.save_as(os.path.join(organ_dict[organ]['label_dir'], dcm_file_name))
+
+            # Convert mask to nifti
+            for organ in organ_dict:
+                label_dir = organ_dict[organ]['label_dir']
+                if organ_dict[organ]['used']:
+                    label_dir_name = os.path.basename(label_dir)
+                    nifti_file_path = os.path.join(label_dir, '{}.nii.gz'.format(label_dir_name))
+                    dicom2nifti.dicom_series_to_nifti(label_dir, nifti_file_path, reorient_nifti=True)
+                else:
+                    shutil_rmtree(label_dir)
 
     # Export (json to nifti)
     # @app.route("/export", methods=['POST'])
@@ -234,7 +292,7 @@ class NiftiApp(object):
                 self.export_func_thread = threading.Thread(target=self.run_export, args=(endpoint, access_key, secret_key, bucket, asset_group))
                 self.export_func_thread.start()
                 self.export_func_thread.join()
-                empty_response["message"] = "Success: Total {} patients have been dealt with by batch mode".format(len(asset_group))
+                empty_response["message"] = "Success: Total {} patients have been exported by batch mode".format(len(asset_group))
                 return response.json(empty_response)
             else:
                 empty_response["message"] = "Fail: asset_group is not list"
@@ -254,8 +312,6 @@ class NiftiApp(object):
 
             empty_response["message"] = "Fail: Lack of {}".format(', '.join(msg_list))
             return response.json(empty_response)
-
-        return response.json({'status': 'success'})
 
 
 if __name__ == "__main__":
