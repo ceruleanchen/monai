@@ -36,6 +36,9 @@ RUN pip3 install torch==1.7.1+cu110 torchvision==0.8.2+cu110 torchaudio==0.7.2 -
     pip3 install scikit-image && \
     pip3 install tensorboard
 
+# Uninstall python3.7 package
+RUN pip3 uninstall -y uvloop
+
 # https://github.com/Project-MONAI/tutorials
 COPY requirements-dev.txt requirements-min.txt requirements.txt ./
 RUN pip3 install monai && \

@@ -3,7 +3,6 @@ import os
 import sys
 import logging
 import json
-from multiprocessing import Process, Manager
 import threading
 import zipfile
 import glob
@@ -15,11 +14,7 @@ import cv2
 import numpy as np
 from sanic import Sanic
 from sanic import response
-
-import boto3
-from botocore.utils import is_valid_endpoint_url
-from botocore.client import Config
-from botocore.exceptions import ClientError, EndpointConnectionError
+import base64
 
 from inference import contours_to_json, empty_json
 from afs2datasource import DBManager, constant
@@ -198,9 +193,12 @@ class NiftiApp(object):
             return response.json(empty_response)
 
     def run_export(self, endpoint, access_key, secret_key, bucket, asset_group):
+        empty_response = {"asset_group": []}
+
         for asset in asset_group:
             category_name = asset.get("category_name", None)
             files = asset.get("files", None)
+            return_asset = {"category_name": category_name, "zipfile": None}
 
             # Download files from S3 blob
             bucket_dir = download_s3(endpoint, access_key, secret_key, bucket, file_list=files, folder_list=[])
@@ -265,14 +263,31 @@ class NiftiApp(object):
                     ds.save_as(os.path.join(organ_dict[organ]['label_dir'], dcm_file_name))
 
             # Convert mask to nifti
+            nifti_file_path_list = []
             for organ in organ_dict:
                 label_dir = organ_dict[organ]['label_dir']
                 if organ_dict[organ]['used']:
                     label_dir_name = os.path.basename(label_dir)
                     nifti_file_path = os.path.join(label_dir, '{}.nii.gz'.format(label_dir_name))
+                    nifti_file_path_list.append(nifti_file_path)
                     dicom2nifti.dicom_series_to_nifti(label_dir, nifti_file_path, reorient_nifti=True)
                 else:
                     shutil_rmtree(label_dir)
+
+            # Zip nifti_file_path_list
+            zip_file_path = os.path.join(export_category_dir, '{}.zip'.format(category_name))
+            with zipfile.ZipFile(zip_file_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for nifti_file_path in nifti_file_path_list:
+                    zf.write(nifti_file_path, os.path.basename(nifti_file_path))
+
+            # Serialize Zipfile
+            with open(zip_file_path, "rb") as zf:
+                zf_bytes = zf.read()
+                zf_b64 = base64.b64encode(zf_bytes).decode("utf8")
+                return_asset["zipfile"] = zf_b64
+            empty_response["asset_group"].append(return_asset)
+
+        return empty_response
 
     # Export (json to nifti)
     # @app.route("/export", methods=['POST'])
@@ -289,10 +304,14 @@ class NiftiApp(object):
         # Check if the S3 credentials
         if endpoint and access_key and secret_key and bucket:
             if isinstance(asset_group, list):
+                '''
                 self.export_func_thread = threading.Thread(target=self.run_export, args=(endpoint, access_key, secret_key, bucket, asset_group))
                 self.export_func_thread.start()
                 self.export_func_thread.join()
                 empty_response["message"] = "Success: Total {} patients have been exported by batch mode".format(len(asset_group))
+                return response.json(empty_response)
+                '''
+                empty_response = self.run_export(endpoint, access_key, secret_key, bucket, asset_group)
                 return response.json(empty_response)
             else:
                 empty_response["message"] = "Fail: asset_group is not list"
