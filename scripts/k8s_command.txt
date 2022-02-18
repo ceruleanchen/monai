@@ -1,0 +1,9 @@
+helm
+cd ~/Code/AFS-HelmChart
+helm uninstall evo-api -n develop
+helm install evo-api ./afs-api/ -n develop
+
+kubectl
+kubectl get pod -n develop
+kubectl logs eno-api-afs-api-6f46994d74-lv5tb -n develop
+kubectl exec --tty --stdin eno-api-afs-api-6f46994d74-lv5tb -n develop -- /bin/bash
