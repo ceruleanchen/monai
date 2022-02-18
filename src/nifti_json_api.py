@@ -26,7 +26,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 monai_dir = os.path.dirname(current_dir)
 
 sys.path.append(os.path.join(monai_dir, "config"))
-from config import read_config_yaml, write_config_yaml, write_config_yaml_with_key_value
+from config import read_config_yaml
 
 sys.path.append(os.path.join(monai_dir, "utils"))
 from utils import os_makedirs, os_remove, shutil_copyfile, shutil_rmtree
@@ -280,12 +280,18 @@ class NiftiApp(object):
                 for nifti_file_path in nifti_file_path_list:
                     zf.write(nifti_file_path, os.path.basename(nifti_file_path))
 
-            # Serialize Zipfile
+            # Serialize Zipfile (encode)
+            # https://stackoverflow.com/questions/11511705/base64-encode-a-zip-file-in-python
             with open(zip_file_path, "rb") as zf:
                 zf_bytes = zf.read()
                 zf_b64 = base64.b64encode(zf_bytes).decode("utf8")
                 return_asset["zipfile"] = zf_b64
             empty_response["asset_group"].append(return_asset)
+
+            # Deserialize Zipfile (decode) (only as reference, do not uncomment this)
+            # https://stackoverflow.com/questions/54747460/how-to-decode-an-encoded-zipfile-using-python
+            # with open('output_file.zip', 'wb') as result:
+            #     result.write(base64.b64decode(zf_b64))
 
         return empty_response
 
