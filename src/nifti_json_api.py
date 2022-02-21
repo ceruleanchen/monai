@@ -147,7 +147,10 @@ class NiftiApp(object):
 
                         image_gray = cv2.cvtColor(dilation, cv2.COLOR_BGR2GRAY)
                         contours, heirarchy = cv2.findContours(image_gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                        contours_to_json(organ, contours, png_file_name, image.shape, json_file_path)
+                        if len(contours) > 0:
+                            contours_to_json(organ, contours, png_file_name, image.shape, json_file_path)
+                        elif nifti_idx==0:
+                            empty_json(png_file_name, image.shape, json_file_path)
                     elif nifti_idx==0:
                         empty_json(png_file_name, image.shape, json_file_path)
 
